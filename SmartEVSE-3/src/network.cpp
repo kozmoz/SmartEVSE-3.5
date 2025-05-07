@@ -44,7 +44,7 @@ mg_timer *MQTTtimer;
 uint8_t lastMqttUpdate = 0;
 #endif
 
-mg_connection *HttpListener80, *HttpListener443;
+mg_connection *HttpListener80, *HttpListener443, *HttpListenerWS;
 
 bool shouldReboot = false;
 
@@ -67,6 +67,8 @@ String TZinfo = "";                                                         // c
 char *downloadUrl = NULL;
 int downloadProgress = 0;
 int downloadSize = 0;
+
+bool has_clients = false;
 
 bool isValidInput(String input) {
   // Check if the input contains only alphanumeric characters, underscores, and hyphens
@@ -985,7 +987,40 @@ static void timer_fn(void *arg) {
 // We use the same event handler function for HTTP and HTTPS connections
 // fn_data is NULL for plain HTTP, and non-NULL for HTTPS
 static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
-  if (ev == MG_EV_ACCEPT && c->fn_data != NULL) {
+
+    if (ev == MG_EV_WS_OPEN) {
+        _LOG_A("==== WS client connected.\n");
+
+        has_clients = true;
+
+        // Generate BMP image from LCD buffer.
+        // const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
+        // const uint
+        // const size_t bmpImageSize = bmpImage.size();
+
+        // Send the latest image if available
+        // if (last_image && last_image_size > 0) {
+        // mg_ws_send(c, bmpImage2, bmpImageSize, WEBSOCKET_OP_BINARY);
+        // }
+    } else if (ev == MG_EV_WS_MSG) {
+        _LOG_A("==== WS client MSG.\n");
+
+        // Got websocket frame. Received data is wm->data. Echo it back!
+
+        struct mg_ws_message *wm = (struct mg_ws_message *)ev_data;
+        _LOG_A("==== WS client MSG contents '%s'.\n", wm->data.buf);
+
+        if (wm != nullptr && wm->data.buf != nullptr) {
+            // Construct the echo response
+            // std::string echo = "Echo: " + std::string(wm->data.buf, wm->data.len);
+            // Send the response back to client
+            // mg_ws_send(c, echo.c_str(), echo.length(), WEBSOCKET_OP_TEXT);
+            mg_ws_send(c, wm->data.buf, wm->data.len, WEBSOCKET_OP_TEXT);
+            // c->recv.len = 0;     // Clean receive buffer
+            // c->is_draining = 1;  // Close this connection when the response is sent
+        }
+
+    } else if (ev == MG_EV_ACCEPT && c->fn_data != NULL) {
     struct mg_tls_opts opts = { .ca = empty, .cert = mg_unpacked("/data/cert.pem"), .key = mg_unpacked("/data/key.pem"), .name = empty, .skip_verification = 0};
     mg_tls_init(c, &opts);
   } else if (ev == MG_EV_CLOSE) {
@@ -997,14 +1032,36 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         _LOG_A("Free HTTP port 443");
         HttpListener443 = nullptr;
     }
+    has_clients = (mgr.conns != NULL);
+
   } else if (ev == MG_EV_HTTP_MSG) {  // New HTTP request received
     struct mg_http_message *hm = (struct mg_http_message *) ev_data;            // Parsed HTTP request
     webServerRequest* request = new webServerRequest();
     request->setMessage(hm);
 //make mongoose 7.14 compatible with 7.13
 #define mg_http_match_uri(X,Y) mg_match(X->uri, mg_str(Y), NULL)
+
+      // mg_str uri = hm->uri;
+      // int len = static_cast<int>(uri.len);
+      // char *buf = uri.buf;
+      // _LOG_A("==== http(s) request received. \n URI: '%.*s'\n", len, buf);
+
+      _LOG_A("==== HTTP(S) request received\nURI: '%.*s'\n", (int)hm->uri.len, hm->uri.buf);
+
+      bool handled = false;
+      if (mg_match(hm->uri, mg_str("/ws"), NULL)) {
+          // https://mongoose.ws/documentation/tutorials/websocket/websocket-server/
+          // Upgrade to websocket. From now on, a connection is a full-duplex
+          // Websocket connection, which will receive MG_EV_WS_MSG events.
+          mg_ws_upgrade(c, hm, NULL);
+          c->data[0] = 'W';            // Set some unique mark on a connection
+          // c->fn = fn;
+          _LOG_A("==== Start WS client /ws upgrade.\n");
+          handled = true;
+      }
+
     // handles URI and response, returns true if handled, false if not
-    if (!handle_URI(c, hm, request)) {
+    if (!handled && !handle_URI(c, hm, request)) {
         if (mg_match(hm->uri, mg_str("/erasesettings"), NULL)) {
             if ( preferences.begin("settings", false) ) {         // our own settings
               preferences.clear();
@@ -1335,9 +1392,12 @@ void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
                 HttpListener80 = mg_http_listen(&mgr, "http://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
             }
             if (!HttpListener443) {
-                HttpListener443 = mg_http_listen(&mgr, "http://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
+                HttpListener443 = mg_http_listen(&mgr, "https://0.0.0.0:443", fn_http_server, (void *) 1);  // Setup listener
             }
-            _LOG_A("HTTP server started\n");
+        // if (!HttpListenerWS) {
+            // HttpListenerWS = mg_http_listen(&mgr, "ws://0.0.0.0:80", fn_http_server, NULL);  // Setup listener
+        // }
+        _LOG_A("HTTP server started\n");
 
 #if DBG == 1
             // if we start RemoteDebug with no wifi credentials installed we get in a bootloop
@@ -1556,6 +1616,32 @@ void WiFiSetup(void) {
 }
 
 
+void send_image_to_clients() {
+
+    _LOG_A("==== send_image_to_clients() called\n");
+
+    // Generate BMP image from LCD buffer.
+    const std::vector<uint8_t> bmpImage = createImageFromGLCDBuffer();
+    const uint8_t *bmpImage2 = bmpImage.data();
+    const size_t bmpImageSize = bmpImage.size();
+
+    // Send binary image data to all clients
+    for (struct mg_connection *c = mgr.conns; c != NULL; c = c->next) {
+        if (c->data[0] == 'W') {
+        // if (c->is_websocket) {
+            // Send the latest image if available
+            // if (last_image && last_image_size > 0) {
+            int result = mg_ws_send(c, bmpImage2, bmpImageSize, WEBSOCKET_OP_BINARY);
+
+            if (result == 0) {
+                _LOG_A("==== mg_ws_send() succesful\n");
+            } else {
+                _LOG_A("==== mg_ws_send() NOT succesful\n");
+            }
+        }
+    }
+}
+
 // called by loop() in the main program
 void network_loop() {
     static unsigned long lastCheck_net = 0;
@@ -1563,6 +1649,10 @@ void network_loop() {
     if (millis() - lastCheck_net >= 1000) {
         lastCheck_net = millis();
         //this block is for non-time critical stuff that needs to run approx 1 / second
+
+        // Send to all WS connected clients.
+        send_image_to_clients();
+
         getLocalTime(&timeinfo, 1000U);
         if (!LocalTimeSet && WIFImode == 1) {
             _LOG_A("Time not synced with NTP yet.\n");

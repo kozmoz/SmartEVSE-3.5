@@ -471,9 +471,79 @@
                           <div class="card border-left-primary shadow h-100 py-2">
                               <div class="card-body">
                                   <div class="row no-gutters align-items-center">
+
+                                      <div>
+                                          <h2>Websocket Example</h2>
+
+                                          <input id="url" type="text" placeholder="Type URL"
+                                                 value="/ws" style="width:20em;"/>
+                                          <button id="connect">connect</button>
+                                          <div style="height: 0.3em;">&nbsp;</div>
+                                          <input id="message" type="text" placeholder="Type message"
+                                                 style="width: 20em;"/>
+                                          <button id="send">send message</button>
+                                          <div style="margin-top: 1em;">Event log:</div>
+                                          <div id="log" style="background: #eee; height: 10em; padding: 0.5em;"></div>
+
+                                      </div>
+
+                                      <hr/>
+
+                                      <script>
+                                          var ws,
+                                              E = function (id) {
+                                              return document.getElementById(id);
+                                          };
+                                          var url = E('url'),
+                                              connect = E('connect'),
+                                              message = E('message'),
+                                              send = E('send'),
+                                              log = E('log');
+                                          var enable = function (en) {
+                                              send.disabled = !en;
+                                              url.disabled = en;
+                                              connect.innerHTML = en ? 'disconnect' : 'connect';
+                                          };
+                                          enable(false)
+                                          connect.onclick = function () {
+                                              if (ws) {
+                                                  ws.close();
+                                                  return;
+                                              }
+                                              ws = new WebSocket(url.value);
+                                              enable(true);
+                                              if (!ws) return;
+                                              ws.onopen = function () {
+                                                  log.innerHTML += 'CONNECTION OPENED<br/>';
+                                              }
+                                              ws.onmessage = function (ev) {
+                                                  console.log('==== onMessage received: ', ev);
+                                                  log.innerHTML += 'RECEIVED: ' + ev.data + '<br/>';
+                                                  if (ev.data && ev.data.size === 1086) {
+                                                      let img = document.getElementById('lcd-screen');
+                                                      img.src = URL.createObjectURL(ev.data);
+                                                  }
+                                              }
+                                              ws.onerror = function (ev) {
+                                                  console.log('==== onError received: ', ev);
+                                                  log.innerHTML += 'ERROR: ' + ev + '<br/>';
+                                              }
+                                              ws.onclose = function () {
+                                                  log.innerHTML += 'CONNECTION CLOSED<br/>';
+                                                  enable(false);
+                                                  ws = null;
+                                              }
+                                          };
+                                          send.onclick = function () {
+                                              if (!ws) return;
+                                              log.innerHTML += 'SENT: ' + message.value + '<br/>';
+                                              ws.send(message.value);
+                                          }
+                                      </script>
+
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
-                                          <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
+                                          <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt="" id="lcd-screen"/>
                                           <div class="lcd-activate">Click to activate</div>
                                           <div class="lcd-buttons">
                                               <button type="button" data-name="left">Left</button>
@@ -486,7 +556,7 @@
                                           </div>
                                       </div>
 <script>
-    (() => {
+    document.addEventListener('DOMContentLoaded', () => {
         const ONE_SECOND_MS = 1000;
         const LCD = document.querySelector('#lcd');
         const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
@@ -496,84 +566,46 @@
         const PASSWORD_SUBMIT = document.querySelector('#lcd-password-submit');
         let passwordVerified = false;
 
-        function updateLcdImage() {
-            let signal;
-            if (typeof AbortController !== 'undefined') {
-                if (updateLcdImage.controller) {
-                    updateLcdImage.controller.abort('timeout');
-                }
-                updateLcdImage.controller = new AbortController();
-                signal = updateLcdImage.controller.signal;
+        let ws2 = new WebSocket('/ws');
+        ws2.onopen = () => console.log("==== Connected");
+        ws2.onerror = (err) => console.error("==== WebSocket Error: ", err);
+        ws2.onmessage = (event) => {
+            console.log('==== New Websocket message received: ', event);
+            if (event.data && event.data.size === 1086) {
+                let img = document.getElementById('lcd-screen');
+                img.src = URL.createObjectURL(event.data);
             }
-
-            fetch('lcd', {signal})
-                .then(response => {
-                    if (!response.ok) return;
-                    response.blob()
-                        .then(blob => LCD_SCREEN.src = URL.createObjectURL(blob));
-                });
-        }
-
-        function createImageUpdater(updateFunc, minDelay) {
-            let lastExecuted = 0;
-            let timer;
-
-            return function (immediate = false) {
-                const now = Date.now();
-                clearTimeout(timer);
-
-                if (immediate || now - lastExecuted >= minDelay) {
-                    updateFunc();
-                    lastExecuted = now;
-                    timer = setTimeout(() => {
-                        lastExecuted = Date.now();
-                        updateFunc();
-                    }, minDelay);
-                    return;
-                }
-                timer = setTimeout(() => {
-                    lastExecuted = Date.now();
-                    updateFunc();
-                }, minDelay - (now - lastExecuted));
-            };
-        }
-
-        const updateLCD = createImageUpdater(updateLcdImage, ONE_SECOND_MS);
+        };
 
         function sendButtonState(btnName, stateDown) {
             if (!passwordVerified) {
-                alert("Please enter PIN code first")
-            } else {
-                fetch(`lcd?button=${btnName}&state=${stateDown ? '1' : '0'}`, {method: 'POST'})
-                    .then(() => {
-                        // Immediate LCD screen refresh on button up.
-                        !stateDown && updateLCD(true);
-                    });
-            }
-        }
-
-        function activateLCD() {
-            if (!LCD_ACTIVATE) {
+                alert("Please enter PIN code first");
                 return;
             }
-            LCD_ACTIVATE.remove();
-            setInterval(updateLCD, ONE_SECOND_MS);
-            LCD_ACTIVATE = null;
+            fetch(`lcd?button=${btnName}&state=${stateDown ? '1' : '0'}`, {method: 'POST'})
+                .then(() => {
+                    // Immediate LCD screen refresh on button up.
+                    !stateDown && updateLCD(true);
+                });
         }
 
         function verifyPassword() {
-            const enteredPassword = PASSWORD_FIELD.value;
-            $.post('/lcd-verify-password', { password: enteredPassword })
-            .done(function(data) {
-                if (data.success) {
+            const password = PASSWORD_FIELD.value;
+            fetch('/lcd-verify-password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password})
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (!data?.success) {
+                        alert("Incorrect PIN. Please try again.");
+                        return;
+                    }
                     passwordVerified = true;
                     alert("PIN verified. You can now use the buttons.");
-                } else {
-                    alert("Incorrect PIN. Please try again.");
-                }
-            });
+                });
         }
-
         PASSWORD_SUBMIT.addEventListener('click', verifyPassword);
 
         ['mousedown', 'mouseup'].forEach(eventName => {
@@ -587,7 +619,7 @@
 
         LCD.addEventListener('mousedown', activateLCD, {once: true});
         updateLcdImage();
-    })();
+    });
 </script>
                                   </div>
                               </div>
