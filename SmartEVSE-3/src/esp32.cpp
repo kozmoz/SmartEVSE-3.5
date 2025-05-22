@@ -408,6 +408,23 @@ uint8_t ProximityPin() {
 }
 #endif
 
+/**
+ * Check if a specific contactor is active
+ *
+ * @param contactorId The ID of the contactor (1 or 2)
+ * @return bool True if the contactor is active, false otherwise
+ * @throws std::runtime_error if the contactor ID is invalid
+ */
+bool isContactorActive(const int contactorId) {
+    switch (contactorId) {
+        case 1:
+            return digitalRead(PIN_SSR) == 1;
+        case 2:
+            return digitalRead(PIN_SSR2) == 1;
+        default:
+            throw std::invalid_argument("Invalid contactor ID: " + std::to_string(contactorId));
+    }
+}
 
 /**
  * Get name of a state
@@ -807,6 +824,32 @@ void SetupMQTTClient() {
     announce("Cable Lock", "select");
 }
 
+int determineActivePhaseCount() {
+    const bool c1Active = isContactorActive(1);
+    const bool c2Active = isContactorActive(2);
+
+    // When C2 is not present, C1 controls all 3 phases
+    if (EnableC2 == NOT_PRESENT) {
+        return c1Active ? 3 : 0;
+    }
+
+    // Both contactors active = 3 phase charging
+    if (c1Active && c2Active) {
+        return 3;
+    }
+    // Only C1 active = single phase charging
+    if (c1Active) {
+        return 1;
+    }
+    // Both contactors inactive = no charging
+    if (!c1Active && !c2Active) {
+        return 0;
+    }
+
+    // C1 inactive but C2 active is an invalid state
+    return -1;
+}
+
 void mqttPublishData() {
     lastMqttUpdate = 0;
 
@@ -826,6 +869,10 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/CustomButton", CustomButton ? "On" : "Off", false, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrent", Balanced[0], true, 0);
         MQTTclient.publish(MQTTprefix + "/ChargeCurrentOverride", OverrideCurrent, true, 0);
+        MQTTclient.publish(MQTTprefix + "/NrOfPhasesCharging", Nr_Of_Phases_Charging, true, 0);
+        MQTTclient.publish(MQTTprefix + "/C1", isContactorActive(1) ? "ON" : "OFF", true, 0);
+        MQTTclient.publish(MQTTprefix + "/C2", isContactorActive(2) ? "ON" : "OFF", true, 0);
+        MQTTclient.publish(MQTTprefix + "/ActivePhaseCount", determineActivePhaseCount(), true, 0);
         MQTTclient.publish(MQTTprefix + "/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
         MQTTclient.publish(MQTTprefix + "/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
         if (RFIDReader && RFIDReader != 6) { //RFIDLastRead not updated in Remote/OCPP mode
@@ -1271,6 +1318,10 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["evse"]["solar_stop_timer"] = SolarStopTimer;
         doc["evse"]["state"] = evstate;
         doc["evse"]["state_id"] = State;
+        doc["evse"]["nr_of_phases_charging"] = Nr_Of_Phases_Charging;
+        doc["evse"]["C1"] = isContactorActive(1) ? "ON" : "OFF";
+        doc["evse"]["C2"] = isContactorActive(2) ? "ON" : "OFF";
+        doc["evse"]["active_phase_count"] = determineActivePhaseCount();
         doc["evse"]["error"] = error;
         doc["evse"]["error_id"] = errorId;
         doc["evse"]["rfid"] = !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus];
