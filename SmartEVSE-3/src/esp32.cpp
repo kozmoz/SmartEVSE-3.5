@@ -873,6 +873,7 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/C1", isContactorActive(1) ? "ON" : "OFF", true, 0);
         MQTTclient.publish(MQTTprefix + "/C2", isContactorActive(2) ? "ON" : "OFF", true, 0);
         MQTTclient.publish(MQTTprefix + "/ActivePhaseCount", determineActivePhaseCount(), true, 0);
+        MQTTclient.publish(MQTTprefix + "/CurrentPWM", CurrentPWM, true, 0);
         MQTTclient.publish(MQTTprefix + "/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
         MQTTclient.publish(MQTTprefix + "/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
         if (RFIDReader && RFIDReader != 6) { //RFIDLastRead not updated in Remote/OCPP mode
@@ -1322,6 +1323,8 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["evse"]["C1"] = isContactorActive(1) ? "ON" : "OFF";
         doc["evse"]["C2"] = isContactorActive(2) ? "ON" : "OFF";
         doc["evse"]["active_phase_count"] = determineActivePhaseCount();
+        doc["evse"]["current_pwm"] = CurrentPWM;
+        doc["evse"]["ev_plug_state"] = pilot != PILOT_12V ? "Connected" : "Disconnected";
         doc["evse"]["error"] = error;
         doc["evse"]["error_id"] = errorId;
         doc["evse"]["rfid"] = !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus];
