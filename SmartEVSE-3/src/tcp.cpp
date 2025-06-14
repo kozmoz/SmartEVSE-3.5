@@ -211,11 +211,11 @@ void decodeV2GTP(void) {
         // Check if we have received the correct message
         if (dinDocDec.V2G_Message.Body.ServiceDiscoveryReq_isUsed) {
 
-            _LOG_D("ServiceDiscoveryReqest\n");
+            _LOG_I("ServiceDiscoveryReqest\n");
             n = dinDocDec.V2G_Message.Header.SessionID.bytesLen;
-            _LOG_D("SessionID:");
-            for (i=0; i<n; i++) _LOG_D("%02x", dinDocDec.V2G_Message.Header.SessionID.bytes[i] );
-            _LOG_D("\n");
+            _LOG_I("SessionID:");
+            for (i=0; i<n; i++) _LOG_I("%02x", dinDocDec.V2G_Message.Header.SessionID.bytes[i] );
+            _LOG_I("\n");
 
             // Now prepare the 'ServiceDiscoveryResponse' message to send back to the EV
             projectExiConnector_prepare_DinExiDocument();
@@ -234,14 +234,22 @@ void decodeV2GTP(void) {
             //dinDocEnc.V2G_Message.Body.ServiceDiscoveryRes.ChargeService.ServiceTag.ServiceScope
             //dinDocEnc.V2G_Message.Body.ServiceDiscoveryRes.ChargeService.ServiceTag.ServiceScope_isUsed
             dinDocEnc.V2G_Message.Body.ServiceDiscoveryRes.ChargeService.FreeService = 0; /* what ever this means. Just from example. */
-            /* dinEVSESupportedEnergyTransferType, e.g.
-            dinEVSESupportedEnergyTransferType_DC_combo_core or
-            dinEVSESupportedEnergyTransferType_DC_core or
-            dinEVSESupportedEnergyTransferType_DC_extended
-            dinEVSESupportedEnergyTransferType_AC_single_phase_core.
+/*          dinEVSESupportedEnergyTransferType
+            dinEVSESupportedEnergyTransferType_AC_single_phase_core = 0,
+            dinEVSESupportedEnergyTransferType_AC_three_phase_core = 1,
+            dinEVSESupportedEnergyTransferType_DC_core = 2,
+            dinEVSESupportedEnergyTransferType_DC_extended = 3,
+            dinEVSESupportedEnergyTransferType_DC_combo_core = 4,
+            dinEVSESupportedEnergyTransferType_DC_dual = 5,
+            dinEVSESupportedEnergyTransferType_AC_core1p_DC_extended = 6,
+            dinEVSESupportedEnergyTransferType_AC_single_DC_core = 7,
+            dinEVSESupportedEnergyTransferType_AC_single_phase_three_phase_core_DC_extended = 8,
+            dinEVSESupportedEnergyTransferType_AC_core3p_DC_extended = 9
+
             DC_extended means "extended pins of an IEC 62196-3 Configuration FF connector", which is
             the normal CCS connector https://en.wikipedia.org/wiki/IEC_62196#FF) */
-            dinDocEnc.V2G_Message.Body.ServiceDiscoveryRes.ChargeService.EnergyTransferType = dinEVSESupportedEnergyTransferType_DC_extended;
+            //dinDocEnc.V2G_Message.Body.ServiceDiscoveryRes.ChargeService.EnergyTransferType = dinEVSESupportedEnergyTransferType_DC_extended;
+            dinDocEnc.V2G_Message.Body.ServiceDiscoveryRes.ChargeService.EnergyTransferType = dinEVSESupportedEnergyTransferType_AC_single_phase_three_phase_core_DC_extended;
 
             // Send ServiceDiscoveryResponse to EV
             global_streamEncPos = 0;
@@ -260,10 +268,10 @@ void decodeV2GTP(void) {
         // Check if we have received the correct message
         if (dinDocDec.V2G_Message.Body.ServicePaymentSelectionReq_isUsed) {
 
-            _LOG_D("ServicePaymentSelectionReqest\n");
+            _LOG_I("ServicePaymentSelectionReqest\n");
 
             if (dinDocDec.V2G_Message.Body.ServicePaymentSelectionReq.SelectedPaymentOption == dinpaymentOptionType_ExternalPayment) {
-                _LOG_D("OK. External Payment Selected\n");
+                _LOG_I("OK. External Payment Selected\n");
 
                 // Now prepare the 'ServicePaymentSelectionResponse' message to send back to the EV
                 projectExiConnector_prepare_DinExiDocument();
@@ -289,7 +297,7 @@ void decodeV2GTP(void) {
         // Check if we have received the correct message
         if (dinDocDec.V2G_Message.Body.ContractAuthenticationReq_isUsed) {
 
-            _LOG_D("ContractAuthenticationRequest\n");
+            _LOG_I("ContractAuthenticationRequest\n");
 
             // Now prepare the 'ContractAuthenticationResponse' message to send back to the EV
             projectExiConnector_prepare_DinExiDocument();
@@ -315,18 +323,18 @@ void decodeV2GTP(void) {
         // Check if we have received the correct message
         if (dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq_isUsed) {
 
-            _LOG_D("ChargeParameterDiscoveryRequest\n");
+            _LOG_I("ChargeParameterDiscoveryRequest\n");
 
             // Read the SOC from the EVRESSOC data
             ComputedSoC = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.DC_EVChargeParameter.DC_EVStatus.EVRESSSOC;
 
-            _LOG_D("Current SoC %d%%\n", ComputedSoC);
+            _LOG_I("Current SoC %d%%\n", ComputedSoC);
             String EVCCIDstr = "";
             for (uint8_t i = 0; i < 6; i++) {
                 if (EVCCID2[i] < 0x10) EVCCIDstr += "0";  // pad with zero for values less than 0x10
                 EVCCIDstr += String(EVCCID2[i], HEX);
             }
-            _LOG_D("EVCCID=%s.\n", EVCCIDstr.c_str());
+            _LOG_I("EVCCID=%s.\n", EVCCIDstr.c_str());
             strncpy(EVCCID, EVCCIDstr.c_str(), sizeof(EVCCID));
             Serial1.printf("@EVCCID:%s\n", EVCCID);  //send to CH32
 
@@ -335,12 +343,12 @@ void decodeV2GTP(void) {
 
             //try to read this required field so we can test if we have communication ok with the EV
             Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.DC_EVChargeParameter.EVMaximumCurrentLimit;
-            _LOG_A("Modem: EVMaximumCurrentLimit=%f %s.\n", Temp.Value * pow(10, Temp.Multiplier), Temp.Unit_isUsed ? UnitStr[Temp.Unit] : ""); //not using pow_10 because multiplier can be negative!
+            _LOG_A("Modem: DC EVMaximumCurrentLimit=%f %s.\n", Temp.Value * pow(10, Temp.Multiplier), Temp.Unit_isUsed ? UnitStr[Temp.Unit] : ""); //not using pow_10 because multiplier can be negative!
 
             Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.DC_EVChargeParameter.EVMaximumVoltageLimit;
-            _LOG_A("Modem: EVMaximumVoltageLimit=%f %s.\n", Temp.Value * pow(10, Temp.Multiplier), Temp.Unit_isUsed ? UnitStr[Temp.Unit] : ""); //not using pow_10 because multiplier can be negative!
+            _LOG_A("Modem: DC EVMaximumVoltageLimit=%f %s.\n", Temp.Value * pow(10, Temp.Multiplier), Temp.Unit_isUsed ? UnitStr[Temp.Unit] : ""); //not using pow_10 because multiplier can be negative!
             Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.DC_EVChargeParameter.EVMaximumPowerLimit;
-            _LOG_A("Modem: EVMaximumPowerLimit=%f %s.\n", Temp.Value * pow(10, Temp.Multiplier), Temp.Unit_isUsed ? UnitStr[Temp.Unit] : ""); //not using pow_10 because multiplier can be negative!
+            _LOG_A("Modem: DC EVMaximumPowerLimit=%f %s.\n", Temp.Value * pow(10, Temp.Multiplier), Temp.Unit_isUsed ? UnitStr[Temp.Unit] : ""); //not using pow_10 because multiplier can be negative!
 
             if(dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.DC_EVChargeParameter.BulkSOC_isUsed) {
                 uint8_t BulkSOC = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.DC_EVChargeParameter.BulkSOC;
@@ -354,6 +362,15 @@ void decodeV2GTP(void) {
 
             uint32_t deptime = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.AC_EVChargeParameter.DepartureTime;
             _LOG_A("Modem: Departure Time=%u.\n", deptime);
+
+            Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.AC_EVChargeParameter.EAmount;
+            _LOG_A("Modem: EAmount=%d %s.\n", Temp.Value, Temp.Unit_isUsed ? UnitStr[Temp.Unit] : "");
+            Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.AC_EVChargeParameter.EVMaxVoltage;
+            _LOG_A("Modem: EVMaxVoltage=%d %s.\n", Temp.Value, Temp.Unit_isUsed ? UnitStr[Temp.Unit] : "");
+            Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.AC_EVChargeParameter.EVMaxCurrent;
+            _LOG_A("Modem: EVMaxCurrent=%d %s.\n", Temp.Value, Temp.Unit_isUsed ? UnitStr[Temp.Unit] : "");
+            Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.AC_EVChargeParameter.EVMinCurrent;
+            _LOG_A("Modem: EVMinCurrent=%d %s.\n", Temp.Value, Temp.Unit_isUsed ? UnitStr[Temp.Unit] : "");
 
             if(dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.DC_EVChargeParameter.EVEnergyCapacity_isUsed) {
                 Temp = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.DC_EVChargeParameter.EVEnergyCapacity;
@@ -378,6 +395,12 @@ void decodeV2GTP(void) {
                     InitialSoC = ComputedSoC;
             }
 
+
+            int8_t Transfer = dinDocDec.V2G_Message.Body.ChargeParameterDiscoveryReq.EVRequestedEnergyTransferType;
+            const char EnergyTransferStr[][25] = {"AC_single_phase_core","AC_three_phase_core","DC_core","DC_extended","DC_combo_core","DC_unique"};
+
+            _LOG_A("Modem: Requested Energy Transfer Type =%s.\n", EnergyTransferStr[Transfer]);
+
             RecomputeSoC();
 
             // Now prepare the 'ChargeParameterDiscoveryResponse' message to send back to the EV
@@ -395,6 +418,20 @@ void decodeV2GTP(void) {
 
         }
 
+        if (dinDocDec.V2G_Message.Body.ChargingStatusReq_isUsed) {
+            _LOG_A("Modem: ChargingStatusReq_isUsed!!\n");
+/*            auto& statusReq = dinDocDec.V2G_Message.Body.ChargingStatusReq;
+
+            if (statusReq.EVStatus_isUsed && statusReq.EVStatus.EVSOC_isUsed) {
+                int soc = statusReq.EVStatus.EVSOC;
+                std::cout << "EV SoC reported: " << soc << "%\n";
+            } else {
+                std::cout << "EVStatus present, but SoC not available.\n";
+            }*/
+        }
+
+    } else {
+        _LOG_A("Modem: fsmState=%u, unknown message received.\n", fsmState);
     }
 
 }
@@ -577,7 +614,7 @@ void evaluateTcpPacket(void) {
     /* It is no connection setup. We can have the following situations here: */
     if (tcpState != TCP_STATE_ESTABLISHED) {
         /* received something while the connection is closed. Just ignore it. */
-        _LOG_D("[TCP] ignore, not connected.\n");
+        _LOG_I("[TCP] ignore, not connected.\n");
         return;
     }
 

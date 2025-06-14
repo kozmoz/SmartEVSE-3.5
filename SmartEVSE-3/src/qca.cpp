@@ -7,7 +7,7 @@
 
 //TODO: check if I need all this:
 uint8_t txbuffer[3164], rxbuffer[3164];
-uint8_t modem_state;
+uint8_t modem_state, old_modem_state;
 uint8_t myMac[6]; // the MAC of the EVSE (derived from the ESP32's MAC).
 uint8_t pevMac[6]; // the MAC of the PEV (most likely the same as EVCCID?) //YES for Volkswagen's rotating EVCCID equals pevMac every time
 uint8_t myModemMac[6]; // our own modem's MAC (this is different from myMAC !). Unused.
@@ -104,34 +104,10 @@ uint32_t qcaspi_read_burst(uint8_t *dst) {
     return 0;
 }
 
-void randomizeNmk() {
-    // randomize the Network Membership Key (NMK)
-    for (uint8_t i=0; i<16; i++) NMK[i] = random(256); // NMK
-}
-
-void setNmkAt(uint16_t index) {
-    // sets the Network Membership Key (NMK) at a certain position in the transmit buffer
-    for (uint8_t i=0; i<16; i++) txbuffer[index+i] = NMK[i]; // NMK
-}
-
-void setNidAt(uint16_t index) {
-    // copies the network ID (NID, 7 bytes) into the wished position in the transmit buffer
-    for (uint8_t i=0; i<7; i++) txbuffer[index+i] = NID[i];
-}
-
 void setMacAt(uint8_t *mac, uint16_t offset) {
     // at offset 0 in the ethernet frame, we have the destination MAC
     // at offset 6 in the ethernet frame, we have the source MAC
     for (uint8_t i=0; i<6; i++) txbuffer[offset+i]=mac[i];
-}
-
-void setRunId(uint16_t offset) {
-    // at the given offset in the transmit buffer, fill the 8-bytes-RunId.
-    for (uint8_t i=0; i<8; i++) txbuffer[offset+i]=pevRunId[i];
-}
-
-void setACVarField(uint16_t offset) {
-    for (uint8_t i=0; i<58; i++) txbuffer[offset+i]=AvgACVar[i];
 }
 
 uint16_t getManagementMessageType() {
@@ -183,12 +159,13 @@ void composeSetKey() {
     txbuffer[30]=0x00; // 11 PRN
     txbuffer[31]=0x00; // 12 PMN
     txbuffer[32]=0x00; // 13 CCo Capability
-    setNidAt(33);      // 14-20 NID  7 bytes from 33 to 39
+    memcpy(&txbuffer[33], NID, 7); // 14-20 NID  7 bytes from 33 to 39
                        // Network ID to be associated with the key distributed herein.
                        // The 54 LSBs of this field contain the NID (refer to Section 3.4.3.1). The
                        // two MSBs shall be set to 0b00.
     txbuffer[40]=0x01; // 21 NewEKS. Table A.8 01 is NMK.
-    setNmkAt(41);      // 22-37 NMK
+    memcpy(&txbuffer[41], NMK, 16); // 22-37 NMK
+
 }
 
 void composeGetSwReq() {
@@ -236,7 +213,7 @@ void composeSlacParamCnf() {
     setMacAt(pevMac, 28); // 9-14 forwarding_sta, same as PEV MAC, plus 2 bytes 00 00
     txbuffer[34]=0x00; // 15 Application type = PEV-EVSE matching
     txbuffer[35]=0x00; // 16 Security type = No security
-    setRunId(36);  // 17-24 runid 8 bytes
+    memcpy(&txbuffer[36], pevRunId, 8); // 17-24 runid 8 bytes
     // rest is 00
 }
 
@@ -255,14 +232,14 @@ void composeSlacParamCnf() {
     txbuffer[19]=0x00; // apptype
     txbuffer[20]=0x00; // security
     setMacAt(pevMac, 21); // Mac address of the EV Host which initiates the SLAC process
-    setRunId(27); // RunId 8 bytes
+    memcpy(&txbuffer[27], pevRunId, 8); // RunId 8 bytes
     txbuffer[35]=0x00; // 35 - 51 source_id, 17 bytes 0x00 (defined in ISO15118-3 table A.4)
 
     txbuffer[52]=0x00; // 52 - 68 response_id, 17 bytes 0x00. (defined in ISO15118-3 table A.4)
 
     txbuffer[69]=ReceivedSounds; // Number of sounds. 10 in normal case.
     txbuffer[70]=0x3A; // Number of groups = 58. (defined in ISO15118-3 table A.4)
-    setACVarField(71); // 71 to 128: The group attenuation for the 58 announced groups.
+    memcpy(&txbuffer[71], AvgACVar, 58); // 71 to 128: The group attenuation for the 58 announced groups.
  }
 
 
@@ -286,11 +263,11 @@ void composeSlacMatchCnf() {
     setMacAt(pevMac, 40); // Pev Mac address
                           // 46 - 62: evse_id 17 bytes. All zero.
     setMacAt(myMac, 63);  // 63 - 68 evse_mac
-    setRunId(69);         // runid 8 bytes 69-76 run_id.
+    memcpy(&txbuffer[69], pevRunId, 8); // runid 8 bytes 69-76 run_id.
                           // 77 to 84 reserved 0
-    setNidAt(85);         // 85-91 NID. We can nearly freely choose this, but the upper two bits need to be zero
+    memcpy(&txbuffer[85], NID, 7); // 85-91 NID. We can nearly freely choose this, but the upper two bits need to be zero
                           // 92 reserved 0
-    setNmkAt(93);         // 93 to 108 NMK. We can freely choose this. Normally we should use a random number.
+    memcpy(&txbuffer[93], NMK, 16); // 93 to 108 NMK. We can freely choose this. Normally we should use a random number.
 }
 
 void composeFactoryDefaults() {
@@ -409,14 +386,12 @@ void SlacManager(uint16_t rxbytes) {
             qcaspi_write_burst(txbuffer, 109); // Send data to modem
             _LOG_I("transmitting CM_SLAC_MATCH.CNF\n");
             TTMatchJoin = millis();
-            modem_state = MODEM_WAIT_LINK;
-            //modem_state = MODEM_GET_SW_REQ;
+            modem_state = MODEM_GET_SW_REQ;
         }
-    } else if (mnt == (CM_LINK_STATUS + MMTYPE_CNF) && modem_state == MODEM_WAIT_LINK) {
-        // We request the link status from the modem, it's the same as the GPIO_0 output.
-        // 1 = Link Ready, 0 = No Link
-        LinkReady = rxbuffer[21];
-        _LOG_I("LinkReady=%u.\n", LinkReady);
+//    } else if (mnt == (CM_LINK_STATUS + MMTYPE_CNF) && modem_state == MODEM_WAIT_LINK) {
+//        // We request the link status from the modem, it's the same as the GPIO_0 output.
+//        // 1 = Link Ready, 0 = No Link
+//        LinkReady = rxbuffer[21];
 
     } else if (mnt == (CM_GET_SW + MMTYPE_CNF) && modem_state == MODEM_WAIT_SW) {
         // Both the local and Pev modem will send their software version.
@@ -425,13 +400,19 @@ void SlacManager(uint16_t rxbytes) {
             // Store the Pev modem MAC, as long as it is not random, we can use it for identifying the EV (Autocharge / Plug N Charge)
             memcpy(pevModemMac, rxbuffer+6, 6);
         }
-        _LOG_I("received GET_SW.CNF\n");
         ModemsFound++;
+        _LOG_I("received GET_SW.CNF, ModemsFound=%u.\n", ModemsFound);
     }
+
+    if (modem_state != old_modem_state) {
+        _LOG_D("SlacManager: modem_state %u -> %u.\n", old_modem_state, modem_state);
+        old_modem_state = modem_state;
+    }
+
 }
 
-
-
+static bool Modem_NMK_Is_Preset = false;
+static unsigned long lastSearch = millis();
 
 // Task
 //
@@ -476,15 +457,27 @@ void Timer20ms(void * parameter) {
             }
         }
 
+        if (modem_state != old_modem_state) {
+            _LOG_D("modem_state %u -> %u.\n", old_modem_state, modem_state);
+            old_modem_state = modem_state;
+        }
+
         switch(modem_state) {
 
             case MODEM_POWERUP:
-                _LOG_I("Searching for local modem.. ");
-                reg16 = qcaspi_read_register16(SPI_REG_SIGNATURE);
-                reg16 = qcaspi_read_register16(SPI_REG_SIGNATURE); //do it twice following the application notes
-                if (reg16 == QCASPI_GOOD_SIGNATURE) {
-                    _LOG_I("QCA700X modem found\n");
-                    modem_state = MODEM_WRITESPACE;
+                if (millis() - lastSearch > 2000) {  //only search every 500ms
+                    _LOG_I("Searching for local modem.. ");
+                    lastSearch = millis();
+                    reg16 = qcaspi_read_register16(SPI_REG_SIGNATURE);
+                    reg16 = qcaspi_read_register16(SPI_REG_SIGNATURE); //do it twice following the application notes
+                    if (reg16 == QCASPI_GOOD_SIGNATURE) {
+                        _LOG_I("QCA700X modem found\n");
+                        if (Modem_NMK_Is_Preset) {
+                            Modem_NMK_Is_Preset = false;
+                            modem_state = MODEM_CONFIGURED;
+                        } else
+                            modem_state = MODEM_WRITESPACE;
+                    }
                 }
                 break;
 
@@ -498,7 +491,7 @@ void Timer20ms(void * parameter) {
                 break;
 
             case MODEM_CM_SET_KEY_REQ:
-                randomizeNmk();       // randomize Nmk, so we start with a new key.
+                esp_fill_random(NMK, 16);
                 composeSetKey();      // set up buffer with CM_SET_KEY.REQ request data
                 qcaspi_write_burst(txbuffer, 60);    // write minimal 60 bytes according to an4_rev5.pdf
                 _LOG_I("transmitting SET_KEY.REQ, to configure the EVSE modem with random NMK\n");
@@ -561,21 +554,26 @@ void Timer20ms(void * parameter) {
             case MODEM_GET_SW_REQ:
                 composeGetSwReq();
                 qcaspi_write_burst(txbuffer, 60); // Send data to modem
-                _LOG_I("Modem Search..\n");
+                _LOG_I("Modem Search on Network..\n");
                 //SetLED(CRGB::Amethyst);
                 ModemsFound = 0;
                 ModemSearchTimer = millis();        // start timer
                 modem_state = MODEM_WAIT_SW;
                 break;
 
-            case MODEM_POWERDOWN:
-                vTaskDelete(NULL);                    // end this task
+            case MODEM_PRESET_NMK:
+                Modem_NMK_Is_Preset = true;
+                modem_state = MODEM_CM_SET_KEY_REQ;   // request a new key before powering down
                 break;
 
             default:
                 break;
         }
 
+        if (modem_state != old_modem_state) {
+            _LOG_D("modem_state2 %u -> %u.\n", old_modem_state, modem_state);
+            old_modem_state = modem_state;
+        }
 
         if (modem_state == MODEM_WAIT_LINK && (LinkStatusTimer + 200) < millis() ) {
 
@@ -618,6 +616,10 @@ void Timer20ms(void * parameter) {
             modem_state = MODEM_POWERUP;
         }
 
+        if (modem_state != old_modem_state) {
+            _LOG_D("modem_state3 %u -> %u.\n", old_modem_state, modem_state);
+            old_modem_state = modem_state;
+        }
 
         // Pause the task for 20ms
         vTaskDelay(20 / portTICK_PERIOD_MS);

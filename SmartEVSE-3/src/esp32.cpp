@@ -559,12 +559,17 @@ void mqtt_receive_callback(const String topic, const String payload) {
 
         // MainsMeter can measure -200A to +200A per phase
         if (n == 3 && (L1 > -2000 && L1 < 2000) && (L2 > -2000 && L2 < 2000) && (L3 > -2000 && L3 < 2000)) {
-            if (LoadBl < 2)
+#if SMARTEVSE_VERSION < 40 //v3
+            if (LoadBl < 2) {
                 MainsMeter.setTimeout(COMM_TIMEOUT);
-            MainsMeter.Irms[0] = L1;
-            MainsMeter.Irms[1] = L2;
-            MainsMeter.Irms[2] = L3;
-            CalcIsum();
+                MainsMeter.Irms[0] = L1;
+                MainsMeter.Irms[1] = L2;
+                MainsMeter.Irms[2] = L3;
+                CalcIsum();
+            }
+#else //v4
+            Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
         }
     } else if (topic == MQTTprefix + "/Set/EVMeter") {
         if (EVMeter.Type != EM_API)
@@ -576,21 +581,29 @@ void mqtt_receive_callback(const String topic, const String payload) {
         // We expect 5 values (and accept -1 for unknown values)
         if (n == 5) {
             if ((L1 > -1 && L1 < 1000) && (L2 > -1 && L2 < 1000) && (L3 > -1 && L3 < 1000)) {
+#if SMARTEVSE_VERSION < 40 //v3
                 // RMS currents
                 EVMeter.Irms[0] = L1;
                 EVMeter.Irms[1] = L2;
                 EVMeter.Irms[2] = L3;
                 EVMeter.CalcImeasured();
                 EVMeter.Timeout = COMM_EVTIMEOUT;
+#else //v4
+                Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, L1, L2, L3); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
             }
 
             if (W > -1) {
                 // Power measurement
+#if SMARTEVSE_VERSION < 40 //v3
                 EVMeter.PowerMeasured = W;
+#else //v4
+                Serial1.printf("@PowerMeasured:%03u,%d\n", EVMeter.Address, W);
+#endif
             }
 
             if (WH > -1) {
-                // Energy measurement
+                // Energy measurement;  //we dont send the energies to CH32 because they are not used there
                 EVMeter.Import_active_energy = WH;
                 EVMeter.Export_active_energy = 0;
                 EVMeter.UpdateEnergies();
@@ -601,6 +614,9 @@ void mqtt_receive_callback(const String topic, const String payload) {
             return;
         homeBatteryCurrent = payload.toInt();
         homeBatteryLastUpdate = time(NULL);
+#if SMARTEVSE_VERSION >= 40
+        SEND_TO_CH32(homeBatteryCurrent); //we set homeBatteryLastUpdate on CH32 on receipt
+#endif
 #if MODEM
     } else if (topic == MQTTprefix + "/Set/RequiredEVCCID") {
         strncpy(RequiredEVCCID, payload.c_str(), sizeof(RequiredEVCCID));
@@ -668,6 +684,16 @@ void mqtt_receive_callback(const String topic, const String payload) {
 
     // Make sure MQTT updates directly to prevent debounces
     lastMqttUpdate = 10;
+}
+
+
+//print RFID in hex format
+void printRFID(char *buf) {
+    if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
+        sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+    } else {
+        sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+    }
 }
 
 
@@ -747,7 +773,15 @@ void SetupMQTTClient() {
         announce("Required EVCCID", "text");
 #endif
 
+    optional_payload = jsna("device_class","energy") + jsna("unit_of_measurement","Wh") + jsna("state_class","total_increasing");
+    if (MainsMeter.Type) {
+        announce("Mains Import Active Energy", "sensor");
+        announce("Mains Export Active Energy", "sensor");
+    }
+
     if (EVMeter.Type) {
+        announce("EV Import Active Energy", "sensor");
+        announce("EV Export Active Energy", "sensor");
         //set the parameters for and announce other sensor entities:
         optional_payload = jsna("device_class","power") + jsna("unit_of_measurement","W");
         announce("EV Charge Power", "sensor");
@@ -857,11 +891,15 @@ void mqttPublishData() {
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL1", MainsMeter.Irms[0], false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL2", MainsMeter.Irms[1], false, 0);
             MQTTclient.publish(MQTTprefix + "/MainsCurrentL3", MainsMeter.Irms[2], false, 0);
+            MQTTclient.publish(MQTTprefix + "/MainsImportActiveEnergy", MainsMeter.Import_active_energy, false, 0);
+            MQTTclient.publish(MQTTprefix + "/MainsExportActiveEnergy", MainsMeter.Export_active_energy, false, 0);
         }
         if (EVMeter.Type) {
             MQTTclient.publish(MQTTprefix + "/EVCurrentL1", EVMeter.Irms[0], false, 0);
             MQTTclient.publish(MQTTprefix + "/EVCurrentL2", EVMeter.Irms[1], false, 0);
             MQTTclient.publish(MQTTprefix + "/EVCurrentL3", EVMeter.Irms[2], false, 0);
+            MQTTclient.publish(MQTTprefix + "/EVImportActiveEnergy", EVMeter.Import_active_energy, false, 0);
+            MQTTclient.publish(MQTTprefix + "/EVExportActiveEnergy", EVMeter.Export_active_energy, false, 0);
         }
         MQTTclient.publish(MQTTprefix + "/ESPTemp", TempEVSE, false, 0);
         MQTTclient.publish(MQTTprefix + "/Mode", AccessStatus == OFF ? "Off" : AccessStatus == PAUSE ? "Pause" : Mode > 3 ? "N/A" : StrMode[Mode], true, 0);
@@ -876,9 +914,9 @@ void mqttPublishData() {
         MQTTclient.publish(MQTTprefix + "/CurrentPWM", CurrentPWM, true, 0);
         MQTTclient.publish(MQTTprefix + "/Access", AccessStatus == OFF ? "Deny" : AccessStatus == ON ? "Allow" : AccessStatus == PAUSE ? "Pause" : "N/A", true, 0);
         MQTTclient.publish(MQTTprefix + "/RFID", !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus], true, 0);
-        if (RFIDReader && RFIDReader != 6) { //RFIDLastRead not updated in Remote/OCPP mode
-            char buf[13];
-            sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
+        if (RFIDReader) {
+            char buf[15];
+            printRFID(buf);
             MQTTclient.publish(MQTTprefix + "/RFIDLastRead", buf, true, 0);
         }
         MQTTclient.publish(MQTTprefix + "/State", getStateNameWeb(State), true, 0);
@@ -1193,7 +1231,7 @@ void RecomputeSoC(void) {
                 if (EVMeter.PowerMeasured > 0) {
                     // Use real-time PowerMeasured data if available
                     TimeToGo = (3600 * EnergyRemaining) / EVMeter.PowerMeasured;
-                } else if (Nr_Of_Phases_Charging > 0) {
+                } else if (Mode != MODE_SOLAR) {
                     // Else, fall back on the theoretical maximum of the cable + nr of phases
                     TimeToGo = (3600 * EnergyRemaining) / (MaxCapacity * (Nr_Of_Phases_Charging * 230));
                 }
@@ -1328,13 +1366,9 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["evse"]["error"] = error;
         doc["evse"]["error_id"] = errorId;
         doc["evse"]["rfid"] = !RFIDReader ? "Not Installed" : RFIDstatus >= 8 ? "NOSTATUS" : StrRFIDStatusWeb[RFIDstatus];
-        if (RFIDReader && RFIDReader != 6) { //RFIDLastRead not updated in Remote/OCPP mode
+        if (RFIDReader) {
             char buf[15];
-            if (RFID[0] == 0x01) {  // old reader 6 byte UID starts at RFID[1]
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X", RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
-            } else {
-                sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X", RFID[0], RFID[1], RFID[2], RFID[3], RFID[4], RFID[5], RFID[6]);
-            }
+            printRFID(buf);
             doc["evse"]["rfid_lastread"] = buf;
         }
 
@@ -1411,20 +1445,22 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["home_battery"]["current"] = homeBatteryCurrent;
         doc["home_battery"]["last_update"] = homeBatteryLastUpdate;
 
+        //[rob040 20240819] Fixed: the net effect of "round(float/100)/10" is a Json value like 235.6999969 or 1.600000024; i.e. result in many decimals, i.s.o. just one.
+        // When using FP constants, like "round(float/100.0)/10.0", no such rounding errors do occurr.
         doc["ev_meter"]["description"] = EMConfig[EVMeter.Type].Desc;
         doc["ev_meter"]["address"] = EVMeter.Address;
-        doc["ev_meter"]["import_active_power"] = round((float)EVMeter.PowerMeasured / 100)/10; //in kW, precision 1 decimal
-        doc["ev_meter"]["total_kwh"] = round((float)EVMeter.Energy / 100)/10; //in kWh, precision 1 decimal
-        doc["ev_meter"]["charged_kwh"] = round((float)EVMeter.EnergyCharged / 100)/10; //in kWh, precision 1 decimal
+        doc["ev_meter"]["import_active_power"] = round((float)EVMeter.PowerMeasured / 100.0)/10.0; //in kW, precision 1 decimal
+        doc["ev_meter"]["total_kwh"] = round((float)EVMeter.Energy / 100.0)/10.0; //in kWh, precision 1 decimal
+        doc["ev_meter"]["charged_kwh"] = round((float)EVMeter.EnergyCharged / 100.0)/10.0; //in kWh, precision 1 decimal
         doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
         doc["ev_meter"]["currents"]["L1"] = EVMeter.Irms[0];
         doc["ev_meter"]["currents"]["L2"] = EVMeter.Irms[1];
         doc["ev_meter"]["currents"]["L3"] = EVMeter.Irms[2];
-        doc["ev_meter"]["import_active_energy"] = round((float)EVMeter.Import_active_energy / 100)/10; //in kWh, precision 1 decimal
-        doc["ev_meter"]["export_active_energy"] = round((float)EVMeter.Export_active_energy / 100)/10; //in kWh, precision 1 decimal
+        doc["ev_meter"]["import_active_energy"] = round((float)EVMeter.Import_active_energy / 100.0)/10.0; //in kWh, precision 1 decimal
+        doc["ev_meter"]["export_active_energy"] = round((float)EVMeter.Export_active_energy / 100.0)/10.0; //in kWh, precision 1 decimal
 
-        doc["mains_meter"]["import_active_energy"] = round((float)MainsMeter.Import_active_energy / 100)/10; //in kWh, precision 1 decimal
-        doc["mains_meter"]["export_active_energy"] = round((float)MainsMeter.Export_active_energy / 100)/10; //in kWh, precision 1 decimal
+        doc["mains_meter"]["import_active_energy"] = round((float)MainsMeter.Import_active_energy / 100.0)/10.0; //in kWh, precision 1 decimal
+        doc["mains_meter"]["export_active_energy"] = round((float)MainsMeter.Export_active_energy / 100.0)/10.0; //in kWh, precision 1 decimal
         if (MainsMeter.Type == EM_HOMEWIZARD_P1) {
             doc["mains_meter"]["host"] = !homeWizardHost.isEmpty() ? homeWizardHost : "HomeWizard P1 Not Found";
         }
@@ -1889,18 +1925,21 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         if(MainsMeter.Type == EM_API) {
             if(request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
                 if (LoadBl < 2) {
+#if SMARTEVSE_VERSION < 40 //v3
                     MainsMeter.Irms[0] = request->getParam("L1")->value().toInt();
                     MainsMeter.Irms[1] = request->getParam("L2")->value().toInt();
                     MainsMeter.Irms[2] = request->getParam("L3")->value().toInt();
 
                     CalcIsum();
+                    MainsMeter.setTimeout(COMM_TIMEOUT);
+#else  //v4
+                    Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, (int16_t) request->getParam("L1")->value().toInt(), (int16_t) request->getParam("L2")->value().toInt(), (int16_t) request->getParam("L3")->value().toInt()); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
                     for (int x = 0; x < 3; x++) {
                         doc["original"]["L" + x] = IrmsOriginal[x];
                         doc["L" + x] = MainsMeter.Irms[x];
                     }
                     doc["TOTAL"] = Isum;
-
-                    MainsMeter.setTimeout(COMM_TIMEOUT);
 
                 } else
                     doc["TOTAL"] = "not allowed on slave";
@@ -1916,12 +1955,15 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         if(EVMeter.Type == EM_API) {
             if(request->hasParam("L1") && request->hasParam("L2") && request->hasParam("L3")) {
-
+#if SMARTEVSE_VERSION < 40 //v3
                 EVMeter.Irms[0] = request->getParam("L1")->value().toInt();
                 EVMeter.Irms[1] = request->getParam("L2")->value().toInt();
                 EVMeter.Irms[2] = request->getParam("L3")->value().toInt();
                 EVMeter.CalcImeasured();
                 EVMeter.Timeout = COMM_EVTIMEOUT;
+#else //v4
+                Serial1.printf("@Irms:%03u,%d,%d,%d\n", EVMeter.Address, (int16_t) request->getParam("L1")->value().toInt(), (int16_t) request->getParam("L2")->value().toInt(), (int16_t) request->getParam("L3")->value().toInt()); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
                 for (int x = 0; x < 3; x++)
                     doc["ev_meter"]["currents"]["L" + x] = EVMeter.Irms[x];
                 doc["ev_meter"]["currents"]["TOTAL"] = EVMeter.Irms[0] + EVMeter.Irms[1] + EVMeter.Irms[2];
@@ -1931,9 +1973,12 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
                 EVMeter.Import_active_energy = request->getParam("import_active_energy")->value().toInt();
                 EVMeter.Export_active_energy = request->getParam("export_active_energy")->value().toInt();
-
+#if SMARTEVSE_VERSION < 40 //v3
                 EVMeter.PowerMeasured = request->getParam("import_active_power")->value().toInt();
-                EVMeter.UpdateEnergies();
+#else //v4
+                Serial1.printf("@PowerMeasured:%03u,%d\n", EVMeter.Address, (int16_t) request->getParam("import_active_power")->value().toInt());
+#endif
+                EVMeter.UpdateEnergies(); //we dont send the energies to CH32 because they are not used there
                 doc["ev_meter"]["import_active_power"] = EVMeter.PowerMeasured;
                 doc["ev_meter"]["import_active_energy"] = EVMeter.Import_active_energy;
                 doc["ev_meter"]["export_active_energy"] = EVMeter.Export_active_energy;
@@ -2050,7 +2095,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\r\n", json.c_str());    // Yes. Respond JSON
         return true;
 
-#if MODEM && SMARTEVSE_VERSION < 40 
+#if MODEM && SMARTEVSE_VERSION < 40
     } else if (mg_http_match_uri(hm, "/ev_state") && !memcmp("POST", hm->method.buf, hm->method.len)) {
         DynamicJsonDocument doc(200);
 
@@ -2195,7 +2240,7 @@ void ocppUpdateRfidReading(const unsigned char *uuid, size_t uuidLen) {
 }
 
 bool ocppIsConnectorPlugged() {
-    return OcppTrackCPvoltage >= PILOT_9V && OcppTrackCPvoltage <= PILOT_3V;
+    return OcppTrackCPvoltage >= PILOT_3V && OcppTrackCPvoltage <= PILOT_9V;
 }
 
 bool ocppHasTxNotification() {
@@ -2246,7 +2291,7 @@ void ocppInit() {
     });
 
     setEvReadyInput([] () { //Input if EV is ready to charge (= J1772 State C)
-        return OcppTrackCPvoltage >= PILOT_6V && OcppTrackCPvoltage <= PILOT_3V;
+        return OcppTrackCPvoltage >= PILOT_3V && OcppTrackCPvoltage <= PILOT_6V;
     });
 
     setEvseReadyInput([] () { //Input if EVSE allows charge (= PWM signal on)
@@ -2423,7 +2468,7 @@ void ocppDeinit() {
 
 void ocppLoop() {
 
-    if (pilot >= PILOT_12V && pilot <= PILOT_3V) {
+    if (pilot >= PILOT_3V && pilot <= PILOT_12V) {
         OcppTrackCPvoltage = pilot;
     }
 
@@ -2530,7 +2575,7 @@ void ocppLoop() {
     OcppForcesLock = false;
 
     if (transaction && transaction->isAuthorized() && (transaction->isActive() || transaction->isRunning()) && // Common tx ongoing
-            (OcppTrackCPvoltage >= PILOT_9V && OcppTrackCPvoltage <= PILOT_3V)) { // Connector plugged
+            (OcppTrackCPvoltage >= PILOT_3V && OcppTrackCPvoltage <= PILOT_9V)) { // Connector plugged
         OcppForcesLock = true;
     }
 
@@ -2713,29 +2758,20 @@ void setup() {
     pinMode(WCH_NRST, INPUT);               // WCH NRST
 
 
-    delay(1000); //this delay is necessary for the modem to be reliably found
     // shutdown QCA is done by the WCH32V, we set all IO pins low, so no current is flowing into the powered down chip.
     digitalWrite(PIN_QCA700X_CS, LOW);
     digitalWrite(PIN_QCA700X_RESETN, LOW);
     digitalWrite(SPI_SCK, LOW);
     digitalWrite(SPI_MOSI, LOW);
 
-
-    delay(1000); //this delay is necessary for the modem to be reliably found
-    //digitalWrite(PIN_QCA700X_RESETN, HIGH);     // Active Low
-    //digitalWrite(PIN_QCA700X_CS, HIGH);
-
     // configure SPI connection to QCA modem
     QCA_SPI1.begin(SPI_SCK, SPI_MISO, SPI_MOSI, PIN_QCA700X_CS);
     // SPI mode is MODE3 (Idle = HIGH, clock in on rising edge), we use a 10Mhz SPI clock
     QCA_SPI1.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE3));
     //attachInterrupt(digitalPinToInterrupt(PIN_QCA700X_INT), SPI_InterruptHandler, RISING);
-    delay(1000); //this delay is necessary for the modem to be reliably found
-
 
     // Setup SWDIO pin as Power Panic interrupt received from the WCH uC. (unused, we use serial comm)
     //attachInterrupt(WCH_SWDIO, PowerPanicESP, FALLING);
-
 
     Serial.begin();                                                     // Debug output on USB
     Serial.setTxTimeoutMs(1);                                           // Workaround for Serial.print while unplugged USB.
@@ -2750,7 +2786,6 @@ void setup() {
     _LOG_D("Flash Size: %u.\n", ESP.getFlashChipSize());
     _LOG_D("Total PSRAM: %u.\n", ESP.getPsramSize());
     _LOG_D("Free PSRAM: %u.\n", ESP.getFreePsram());
-
 
 
     // configure SPI connection to LCD
@@ -2771,6 +2806,22 @@ void setup() {
     ledcAttachPin(LCD_LED, LCD_CHANNEL);
     ledcWrite(LCD_CHANNEL, 255);                // Set LCD backlight brightness 0-255
 
+    digitalWrite(PIN_QCA700X_RESETN, HIGH);         // get modem out of reset
+    esp_read_mac(myMac, ESP_MAC_ETH); // select the Ethernet MAC
+extern void setSeccIp();
+    setSeccIp();  // use myMac to create link-local IPv6 address.
+extern uint8_t modem_state;
+    modem_state = MODEM_POWERUP;
+    // Create Task 20ms Timer
+extern void Timer20ms(void * parameter);
+    xTaskCreate(
+        Timer20ms,      // Function that should be called
+        "Timer20ms",    // Name of the task (for debugging)
+        3072,           // Stack size (bytes)
+        NULL,           // Parameter to pass
+        1,              // Task priority
+        NULL            // Task handle
+    );
 #endif //SMARTEVSE_VERSION
 
     // Read all settings from non volatile memory; MQTTprefix will be overwritten if stored in NVS
@@ -2939,12 +2990,16 @@ bool fwNeedsUpdate(char * version) {
     lastCheck_homewizard = currentTime;
 
     const auto currents = getMainsFromHomeWizardP1();
+#if SMARTEVSE_VERSION < 40 //v3
     for (int i = 0; i < currents.first; i++)
         MainsMeter.Irms[i] = currents.second[i];
     if (currents.first) {
         CalcIsum();
         MainsMeter.setTimeout(COMM_TIMEOUT);
     }
+#else
+    Serial1.printf("@Irms:%03u,%d,%d,%d\n", MainsMeter.Address, currents.second[0], currents.second[1], currents.second[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA
+#endif
 }
 
 void loop() {
@@ -2958,9 +3013,12 @@ void loop() {
     if (millis() - lastCheck >= 1000) {
         lastCheck = millis();
         //this block is for non-time critical stuff that needs to run approx 1 / second
-
+#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
         //printStatus:
         _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A, MainsMeter.Timeout=%u, EVMeter.Timeout=%u.\n", getStateName(State), ErrorFlags, StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10, MainsMeter.Timeout, EVMeter.Timeout);
+#else
+        _LOG_I ("STATE: %s Error: %u StartCurrent: -%i ChargeDelay: %u SolarStopTimer: %u NoCurrent: %u Imeasured: %.1f A IsetBalanced: %.1f A.\n", getStateName(State), ErrorFlags, StartCurrent, ChargeDelay, SolarStopTimer,  NoCurrent, (float)MainsMeter.Imeasured/10, (float)IsetBalanced/10);
+#endif
         _LOG_I("L1: %.1f A L2: %.1f A L3: %.1f A Isum: %.1f A\n", (float)MainsMeter.Irms[0]/10, (float)MainsMeter.Irms[1]/10, (float)MainsMeter.Irms[2]/10, (float)Isum/10);
 
 #if AUTOMATED_TESTING

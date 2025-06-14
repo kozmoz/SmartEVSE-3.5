@@ -886,12 +886,12 @@ void webServerRequest::setMessage(struct mg_http_message *hm) {
 }
 
 bool webServerRequest::hasParam(const char *param) {
-    return (mg_http_get_var(&hm_internal->query, param, temp, sizeof(temp)) > 0);
+    return (mg_http_get_var(&hm_internal->query, param, temp, sizeof(temp)) >= 0);
 }
 
 webServerRequest* webServerRequest::getParam(const char *param) {
     _value = ""; // Clear previous value
-    if (mg_http_get_var(&hm_internal->query, param, temp, sizeof(temp)) > 0) {
+    if (mg_http_get_var(&hm_internal->query, param, temp, sizeof(temp)) >= 0) {
         _value = temp;
     }
     return this; // Return pointer to self
@@ -1054,11 +1054,13 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     if(!offset) {
                         _LOG_A("Update Start: %s\n", file);
                         if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000), U_FLASH) {
-                                Update.printError(Serial);
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
+                            Update.printError(Serial);
                         }
                     }
                     if(!Update.hasError()) {
                         if(Update.write((uint8_t*) hm->body.buf, hm->body.len) != hm->body.len) {
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
                             Update.printError(Serial);
                         } else {
                             _LOG_A("bytes written %lu\r", offset + hm->body.len);
@@ -1070,6 +1072,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                             delay(1000);
                             ESP.restart();
                         } else {
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
                             Update.printError(Serial);
                         }
                     }
@@ -1085,11 +1088,13 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                         _LOG_A("Firmware signature:");
                         dump(signature);
                         if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000), U_FLASH) {
-                                Update.printError(Serial);
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
+                            Update.printError(Serial);
                         }
                     }
                     if(!Update.hasError()) {
                         if(Update.write((uint8_t*) hm->body.buf, hm->body.len) != hm->body.len) {
+                            _LOG_A("ERROR: Update has error:%s.\n", Update.errorString());
                             Update.printError(Serial);
                             FREE(signature);
                         } else {
@@ -1121,7 +1126,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                             }
                         }
                         if (!verification_result) {
-                            _LOG_A("Update failed!\n");
+                            _LOG_A("Update failed! ERROR:%s.\n", Update.errorString());
                             Update.printError(Serial);
                             //Update.abort(); //not sure this does anything in this stage
                             //Update.rollBack();
