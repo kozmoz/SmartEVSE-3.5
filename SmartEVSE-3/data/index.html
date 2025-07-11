@@ -3,16 +3,15 @@
 <head>
   <title>Smart EVSE V3</title>
 
-  <link rel="icon" href="favicon.ico" type="image/x-icon">
-  <meta name="description" content="Smart EVSE V3 - Electric Vehicle Smart Charging Dashboard">
+  <link rel="icon" href="favicon.ico" type="image/x-icon" />
+  <meta name="description" content="Smart EVSE V3 - Electric Vehicle Smart Charging Dashboard" />
 
   <!-- Required meta tags -->
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
-
-  <link href="styling.css" rel="stylesheet">
+  <link rel="stylesheet" href="bootstrap-4.6.2.min.css" />
+  <link rel="stylesheet" href="styling.css" />
 </head>
 
 <body>
@@ -26,7 +25,7 @@
               <!-- Begin Page Content -->
               <div class="container-fluid">
                   <div class="mb-4">
-                    <div class="card bg-success text-white shadow">
+                    <div class="card bg-smartevse text-white shadow">
                         <div class="card-body">
                           <h1 class="h3 mb-0 text-white-800">Smart EVSE V3</h1>
                           <h1 class="h5 mb-0 text-white-800">
@@ -48,7 +47,7 @@
                                     <div class="col mr-2">
                                         <div class="text font-weight-bold text-primary text-uppercase mb-1">EVSE</div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               Mode:
                                             </div>
                                             <div class="col">
@@ -56,7 +55,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center" id="loadbl">
-                                            <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                            <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               Power Sharing:
                                             </div>
                                             <div class="col">
@@ -64,7 +63,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center with_modem">
-                                            <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                            <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                                 Duty cycle:
                                             </div>
                                             <div class="col">
@@ -72,7 +71,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               Connected:
                                             </div>
                                             <div class="col">
@@ -80,7 +79,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               State:
                                             </div>
                                             <div class="col">
@@ -88,7 +87,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center" id="with_errors">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               Error:
                                             </div>
                                             <div class="col">
@@ -96,7 +95,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center" id="show_rfid">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               RFID:
                                             </div>
                                             <div class="col">
@@ -104,7 +103,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               Charge:
                                             </div>
                                             <div class="col">
@@ -112,7 +111,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               Temp:
                                             </div>
                                             <div class="col">
@@ -120,7 +119,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               MQTT:
                                           </div>
                                           <div class="col">
@@ -128,7 +127,7 @@
                                           </div>
                                       </div>
                                         <div class="row no-gutters align-items-center" id="contactor2">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               Contactor 2:
                                             </div>
                                             <div class="col">
@@ -136,7 +135,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               StartTime:
                                             </div>
                                             <div class="col">
@@ -144,7 +143,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               StopTime:
                                             </div>
                                             <div class="col">
@@ -152,7 +151,7 @@
                                             </div>
                                         </div>
                                         <div class="row no-gutters align-items-center">
-                                          <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 140px;">
+                                          <div class="col-4 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                               Repeat:
                                             </div>
                                             <div class="col">
@@ -177,6 +176,7 @@
                                   <div class="row no-gutters align-items-center">
                                       <div class="lcd" id="lcd">
                                           <img class="lcd-device" src="SmartEVSE.webp" width="401" height="600" alt=""/>
+                                          <!--suppress CheckImageSize -->
                                           <img class="lcd-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAmMBgX1lyz4AAAAASUVORK5CYII=" width="256" height="128" alt=""/>
                                           <div class="lcd-activate">Click to activate</div>
                                           <div class="lcd-buttons">
@@ -184,13 +184,14 @@
                                               <button type="button" data-name="middle">Middle</button>
                                               <button type="button" data-name="right">Right</button>
                                           </div>
-
-                                          <div class="form-inline" id="lcd-password-form">
-                                              <input type="text" id="lcd-password" class="form-control mr-2" placeholder="Enter PIN">
-                                              <button type="button" id="lcd-password-submit" class="btn btn-primary">Submit</button>
-                                          </div>
-
                                       </div>
+
+                                      <form id="lcd-password-form" class="form-inline mt-2">
+                                        <label class="sr-only" for="lcd-password">PIN</label>
+                                        <input type="text" id="lcd-password" class="form-control mr-2" placeholder="Enter PIN" />
+                                        <button type="submit" id="lcd-password-submit" class="btn btn-primary">Submit</button>
+                                      </form>
+
                                   </div>
                               </div>
                           </div>
@@ -617,12 +618,12 @@
                                           </div>
                                         </div>
                                         <div class="col">
-                                          <button type="button" id="mode_0" onclick="activate(0)">OFF</button>
-                                          <button type="button" id="mode_4" onclick="activate(4)">PAUSE</button>
-                                          <button type="button" id="mode_1" onclick="activate(1)">NORMAL</button>
+                                          <button type="button" id="mode_0" class="btn btn-secondary" onclick="activate(0)">OFF</button>
+                                          <button type="button" id="mode_4" class="btn btn-secondary" onclick="activate(4)">PAUSE</button>
+                                          <button type="button" id="mode_1" class="btn btn-secondary" onclick="activate(1)">NORMAL</button>
                                           <span id="with_mainsmeter_buttons">
-                                            <button type="button" id="mode_2" onclick="activate(2)">SOLAR</button>
-                                            <button type="button" id="mode_3" onclick="activate(3)">SMART</button>
+                                            <button type="button" id="mode_2" class="btn btn-secondary" onclick="activate(2)">SOLAR</button>
+                                            <button type="button" id="mode_3" class="btn btn-secondary" onclick="activate(3)">SMART</button>
                                           </span>
                                           <form class="form-inline" id="form_mode">
                                             <div class="form-group">
@@ -698,7 +699,7 @@
                                               <label class="form-check-label" style="width: 155px; display:inline-block;" for="cablelock" id="cablelock_label" title="Lock cable with actuator on EVSE side">Cable Lock</label>
                                           </div>
                                       </div>
-                                    </div> 
+                                    </div>
                                     <div class="row no-gutters align-items-center with_modem">
                                         <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
                                             Override PWM:
@@ -811,9 +812,9 @@
       </div>
   </div>
 
-  <script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
-  <script src="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+<!--  <script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>-->
+<!--  <script src="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>-->
+<!--  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>-->
 
   <script src="main.js"></script>
 

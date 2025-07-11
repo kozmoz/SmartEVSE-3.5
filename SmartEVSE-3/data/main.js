@@ -200,7 +200,7 @@ function loadData(data) {
     // Show the active mode-button (in green).
     $qs('#mode').textContent = data.mode;
     for (let x = 0; x <= 4; x++) {
-        $qs('#mode_' + x).classList.toggle('btn-active', (x === data.mode_id));
+        $qs('#mode_' + x).classList.toggle('btn-success', (x === data.mode_id));
     }
 
     $qs('#dutycycle').textContent = (data.evse.pwm * 100 / 1024).toFixed(0) + ' %';
@@ -440,10 +440,11 @@ function initDisplay() {
     let LCD_ACTIVATE = $qs('#lcd .lcd-activate');
     const PASSWORD_FIELD = $qs('#lcd-password');
     const PASSWORD_SUBMIT = $qs('#lcd-password-submit');
+    const PASSWORD_FORM = $qs('#lcd-password-form');
     let passwordVerified = sessionStorage.getItem('passwordVerified') === 'true';
 
     if (passwordVerified) {
-        $qs('#lcd-password-form').classList.add('invisible');
+        PASSWORD_FORM.classList.add('invisible');
     }
 
     function updateLcdImage() {
@@ -493,6 +494,9 @@ function initDisplay() {
     function sendButtonState(btnName, stateDown) {
         if (!passwordVerified) {
             alert("Please enter PIN code first");
+            setTimeout(() => {
+                PASSWORD_FIELD.focus();
+            });
             return;
         }
         fetch(`${endpoint}lcd?button=${btnName}&state=${stateDown ? '1' : '0'}`, {method: 'POST'})
@@ -511,7 +515,10 @@ function initDisplay() {
         LCD_ACTIVATE = null;
     }
 
-    function verifyPassword() {
+    function verifyPassword(event) {
+        if (event?.preventDefault) {
+            event.preventDefault();
+        }
         const enteredPassword = PASSWORD_FIELD.value;
         fetch(`${endpoint}lcd-verify-password`, {
             method: 'POST',
@@ -525,7 +532,7 @@ function initDisplay() {
                     // Keep verified during the complete browser session.
                     sessionStorage.setItem('passwordVerified', 'true');
                     alert("PIN verified. You can now use the buttons.");
-                    $qs('#lcd-password-form').classList.add('invisible');
+                    PASSWORD_FORM.classList.add('invisible');
                     return;
                 }
                 throw new Error("Incorrect PIN");
@@ -534,10 +541,15 @@ function initDisplay() {
                 passwordVerified = false;
                 sessionStorage.removeItem('passwordVerified');
                 alert("Incorrect PIN. Please try again.");
+                console.log("=== FIELD: ", PASSWORD_FIELD);
+                setTimeout(() => {
+                    PASSWORD_FIELD.focus();
+                });
             })
     }
 
     PASSWORD_SUBMIT.addEventListener('click', verifyPassword);
+    PASSWORD_FORM.addEventListener('submit', verifyPassword);
 
     ['mousedown', 'mouseup'].forEach(eventName => {
         LCD_BUTTONS.addEventListener(eventName, event => {
