@@ -114,7 +114,11 @@
 
 /* General class to hide stuff. */
 .hidden {
-    display: none; !important;
+    display: none !important;
+}
+
+.invisible {
+    visibility: hidden !important;
 }
 
 /* Fix jQuery mobile button as a block. */

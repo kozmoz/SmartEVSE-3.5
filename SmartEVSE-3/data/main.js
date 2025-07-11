@@ -154,24 +154,6 @@ let ocppEditMode = false;
  * @property {string} ev_state.evccid
  */
 
-/**
- * Shortcut to the `document.querySelector` method.
- */
-const $qs = (selector) => {
-    const result = document.querySelector(selector);
-    // If no element found, return an object to have the same behavior as jQuery.
-    if (!result) {
-        return {
-            style: {display: ''},
-            textContent: '',
-            value: '',
-            classList: {toggle: () => {}}
-        };
-    }
-    return result;
-};
-const $qsa = (selector) => document.querySelectorAll(selector);
-
 function initializeDisplayData(data) {
     // Executed once.
     if (initiated) {
@@ -190,6 +172,7 @@ function initializeDisplayData(data) {
     // value 0 = no override
     if (data.evse.loadbl < 2) {
         const selectElement = $qs('#mode_override_current');
+        selectElement.value = '0';
         const noOverrideOption = document.createElement('option');
         noOverrideOption.value = '0';
         noOverrideOption.text = 'no override';
@@ -457,7 +440,11 @@ function initDisplay() {
     let LCD_ACTIVATE = $qs('#lcd .lcd-activate');
     const PASSWORD_FIELD = $qs('#lcd-password');
     const PASSWORD_SUBMIT = $qs('#lcd-password-submit');
-    let passwordVerified = false;
+    let passwordVerified = sessionStorage.getItem('passwordVerified') === 'true';
+
+    if (passwordVerified) {
+        $qs('#lcd-password-form').classList.add('invisible');
+    }
 
     function updateLcdImage() {
         let signal;
@@ -535,11 +522,19 @@ function initDisplay() {
             .then(data => {
                 if (data?.success) {
                     passwordVerified = true;
+                    // Keep verified during the complete browser session.
+                    sessionStorage.setItem('passwordVerified', 'true');
                     alert("PIN verified. You can now use the buttons.");
+                    $qs('#lcd-password-form').classList.add('invisible');
                     return;
                 }
+                throw new Error("Incorrect PIN");
+            })
+            .catch(() => {
+                passwordVerified = false;
+                sessionStorage.removeItem('passwordVerified');
                 alert("Incorrect PIN. Please try again.");
-            });
+            })
     }
 
     PASSWORD_SUBMIT.addEventListener('click', verifyPassword);
@@ -746,6 +741,24 @@ function postRequiredEVCCID() {
     // noinspection JSIgnoredPromiseFromCall
     fetch(`${endpoint}settings?required_evccid=${required_evccid}`, {method: 'POST'});
 }
+
+/**
+ * Shortcut to the `document.querySelector` method.
+ */
+const $qs = (selector) => {
+    const result = document.querySelector(selector);
+    // If no element found, return an object to have the same behavior as jQuery.
+    if (!result) {
+        return {
+            style: {display: ''},
+            textContent: '',
+            value: '',
+            classList: {toggle: () => {}}
+        };
+    }
+    return result;
+};
+const $qsa = (selector) => document.querySelectorAll(selector);
 
 // Get the current date and time
 const now = new Date();
