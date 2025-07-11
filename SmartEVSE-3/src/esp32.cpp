@@ -1456,7 +1456,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         String json;
         serializeJson(doc, json);
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
+        mg_http_reply(c, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "%s\n", json.c_str());    // Yes. Respond JSON
         return true;
       } else if (!memcmp("POST", hm->method.buf, hm->method.len)) {                     // if POST
         if(request->hasParam("mqtt_update")) {
@@ -2011,6 +2011,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
                       "Connection: keep-alive\r\n"
                       "Cache-Control: no-cache\r\n"
                       "Transfer-Encoding: chunked\r\n"
+                      "Access-Control-Allow-Origin: *\r\n"
                       "\r\n");
 
             // Using chunked transfer encoding to get rid of content-len + keep-alive problems.

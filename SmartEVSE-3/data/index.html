@@ -1,376 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-	<title>Smart EVSE V3</title>
+  <title>Smart EVSE V3</title>
 
-  <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
-	<script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
-	<script src="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <meta name="description" content="Smart EVSE V3 - Electric Vehicle Smart Charging Dashboard">
 
   <!-- Required meta tags -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Bootstrap CSS -->
+
+  <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
 
   <link href="styling.css" rel="stylesheet">
-  <style>
-    .tooltip {
-      position: relative;
-      display: inline-block;
-      border-bottom: 1px dotted black;
-      opacity: unset;
-      font-size: inherit;
-    }
-    .tooltip .tooltiptext {
-      visibility: hidden;
-      width: 220px;
-      background-color: black;
-      color: #fff;
-      text-align: center;
-      border-radius: 6px;
-      padding: 5px 0;
-      position: absolute;
-      z-index: 1;
-      bottom: 100%;
-      left: 50%;
-      margin-left: -110px;
-      font-size: .875rem;
-    }
-    .tooltip:hover .tooltiptext {
-      visibility: visible;
-    }
-  </style>
 </head>
 
 <body>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
-
-  <script>
-      let endpoint = document.location + 'settings';
-      // let endpoint = 'http://10.0.0.36/settings';
-      let initiated=false;
-      let mqttEditMode = false;
-      let ocppEditMode = false;
-      let last_evse_state_id=0;
-
-      $(document).ready(loadData());
-
-
-      function loadData(){
-        $.ajax({
-              url: endpoint
-          }).then(function(data) {
-            if(!initiated) {
-              initiated = true;
-              // Set the text and the data-version attribute dynamically
-              $('#version')
-                .text(data.version)         // fill visible text with version string
-                .attr('data-version', data.version); // update data-version attribute
-              sessionStorage.setItem("version",JSON.stringify(data.version));
-              $('#serialnr').append(data.serialnr);
-              sessionStorage.setItem("serialnr",JSON.stringify(data.serialnr));
-
-              let minCurrent=parseInt(data.settings.current_min.toFixed(1));
-              let maxCurrent=parseInt(data.settings.current_max.toFixed(1));
-
-              // Initialize at page load
-              // value 0 = no override
-              if(data.evse.loadbl < 2) {
-                $('#mode_override_current').append($('<option>', {
-                    value: 0,
-                    text: 'no override'
-                }));
-                for(let x = minCurrent ; x <= maxCurrent ; x++) {
-                  $('#mode_override_current').append($('<option>', {
-                      value: x,
-                      text: x + 'A'
-                  }));
-                }
-              }
-              $('#required_evccid').val(data.settings.required_evccid || "");
-            }
-            for(let x=0; x<=4; x++) {
-              //mode = 'mode'+x;
-              if(x == data.mode_id) {
-                $('#mode_' + x).css("background-color", "#1CC88A"); // active mode: GREEN
-                //document.getElementById(mode).classList.add("ui-btn-active");
-                //$('#mode_' + x).classList.add("ui-btn-active");
-              } else {
-                $('#mode_' + x).css("background-color", ""); //remove background-color style, so that mouseover works! was "#EDEDED"
-                //document.getElementById(mode).classList.delete("ui-btn-active");
-                //$('#mode_' + x).classList.delete("ui-btn-active");
-              }
-            }
-            //todo: iso above change style, do change class list and add "ui-btn-active"
-            //$('#mode_' + data.mode_id).css("background-color", "#1CC88A");
-
-            $('#mode').text(data.mode);
-            $('#dutycycle').text((data.evse.pwm*100/1024).toFixed(0) + " %");
-            if(data.mode_id == 2) { //SOLAR MODE
-              $('.with_solar').show();
-              $('[id=override_current_box]').hide();
-              $('[id=override_current_box2]').hide();
-            } else {
-              $('.with_solar').hide();
-              $('[id=override_current_box]').show();
-              $('[id=override_current_box2]').show();
-            }
-
-            if (data.ev_state) {
-              let full_soc = data.ev_state.full_soc;
-              let initial_soc = data.ev_state.initial_soc;
-              let computed_soc = data.ev_state.computed_soc;
-              let time_until_full = data.ev_state.time_until_full;
-              let energy_capacity = data.ev_state.energy_capacity;
-              let energy_request = data.ev_state.energy_request;
-              let evccid = data.ev_state.evccid;
-
-              $('#computed_soc').html(computed_soc >= 0 ? computed_soc + " &#37;" : "N/A");
-              $('#full_soc').html(full_soc >= 0 ? full_soc + " &#37;" : "N/A");
-              $('#initial_soc').html(initial_soc >= 0 ? initial_soc + " &#37;" : "N/A");
-              $('#energy_capacity').html(energy_capacity >= 0 ? energy_capacity.toFixed(1) + " kWh" : "N/A");
-              $('#evccid').html(evccid || "N/A");
-              $('#full_at')
-                .text(time_until_full > 0 ? new Date(+Date.now()+(time_until_full * 1000)).toLocaleString(undefined, { timeStyle: 'short', dateStyle: "short" }) : 'N/A')
-                .attr('title', (time_until_full > 0 ? Math.round(time_until_full / 60) + ' min to go' : 'N/A'));
-            }
-
-            if (data.mqtt) {
-              $('#mqtt').text((data.mqtt.status) || 'N/A').show();
-              $('#mqtt_config').show();
-            } else {
-              $('#mqtt').text('').hide();
-              $('.config').hide();
-              $('#mqtt_config').hide();
-            }
-
-            if(data.evse.loadbl > 1) {
-              $('[id=loadbl]').show();
-              $('[id=loadbl_text]').show();
-              $('[id=loadbl_node]').text("Slave Node "+(data.evse.loadbl-1));
-              //$('[id=loadbl_text_slave]').show();
-              //$('[id=loadbl_text_master]').hide();
-              $('[id=contactor2]').hide();
-              //$('[id=form_mode] :input').prop('disabled',true);
-              $('[id=mode_2]').show();
-              $('[id=mode_3]').show();
-              $('.with_solar').hide();
-              //$('[id=mode_override_current]').prop('disabled',true);
-              $('[id=override_current_box]').hide();
-              $('[id=override_current_box2]').hide();
-              $('[id=form_pwm] :input').prop('disabled',true);
-            } else if (data.evse.loadbl == 1) {
-              $('[id=loadbl]').show();
-              $('[id=loadbl_text]').show();
-              $('[id=loadbl_node]').text("Master");
-              //$('[id=loadbl_text_slave]').hide();
-              //$('[id=loadbl_text_master]').show();
-              $('[id=contactor2]').hide();
-              //$('[id=form_mode] :input').prop('disabled',false);
-              $('[id=mode_2]').show();
-              $('[id=mode_3]').show();
-              $('.with_solar').hide();
-              //$('[id=mode_override_current]').prop('disabled',false);
-              $('[id=form_pwm] :input').prop('disabled',false);
-            } else {
-              $('[id=loadbl]').hide();
-              $('[id=loadbl_text]').hide();
-              //$('[id=loadbl_text_slave]').hide();
-              //$('[id=loadbl_text_master]').hide();
-              $('[id=contactor2]').show();
-              //$('[id=form_mode] :input').prop('disabled',false);
-              $('[id=mode_2]').show();
-              $('[id=mode_3]').show();
-              //$('[id=mode_override_current]').prop('disabled',false);
-              $('[id=form_pwm] :input').prop('disabled',false);
-            }
-            $('#car_connected').text(data.car_connected ? "Yes" : "No");
-            $('#state').text(data.evse.state);
-            last_evse_state_id = data.evse.last_state_id;
-            $('#temp').text(data.evse.temp + " °C / " + data.evse.temp_max + " °C");
-            if(data.evse.error != "None") {
-              $('#error').text(data.evse.error);
-              $('[id=with_errors]').show();
-            } else {
-              $('[id=with_errors]').hide();
-            }
-
-            if(data.evse.rfid != "Not Installed") {
-              $('#rfid').text(data.evse.rfid);
-            } else {
-              $('#show_rfid').hide();
-            }
-
-            // if(data.evse.charge_timer > 0) {
-            //   $('#state').append(" (Starting in " + data.evse.charge_timer + "s)");
-            // }
-            if(data.evse.solar_stop_timer > 0) {
-              $('#state').append(" (Stopping in " + data.evse.solar_stop_timer + "s)");
-            }
-
-            $('#current_min').text(data.settings.current_min.toFixed(1) + " A");
-            $('#current_max').text(data.settings.current_max.toFixed(1) + " A");
-            $('#override_current').text((data.settings.override_current/10).toFixed(1) + " A");
-            $('#enable_C2').text(data.settings.enable_C2);
-            if (data.settings.starttime) {
-                $('#starttime_date_time').text(new Date(data.settings.starttime * 1000).toLocaleDateString() + " " + new Date(data.settings.starttime * 1000).toLocaleTimeString());
-            } else {
-                $('#starttime_date_time').text("none");
-            }
-            if (data.settings.stoptime) {
-                $('#stoptime_date_time').text(new Date(data.settings.stoptime * 1000).toLocaleDateString() + " " + new Date(data.settings.stoptime * 1000).toLocaleTimeString());
-            } else {
-                $('#stoptime_date_time').text("none");
-            }
-            if (data.settings.repeat == 1) {
-                $('#repeat').text("Daily");
-            }
-            else {
-                $('#repeat').text("none");
-            }
-            $('#battery_current').text((data.home_battery.current/10).toFixed(1) + " A");
-
-            $('#phase_total').text((data.phase_currents.TOTAL/10).toFixed(1) + " A");
-            $('#phase_1').text((data.phase_currents.L1/10).toFixed(1) + " A");
-            $('#phase_2').text((data.phase_currents.L2/10).toFixed(1) + " A");
-            $('#phase_3').text((data.phase_currents.L3/10).toFixed(1) + " A");
-            $('#evmeter_currents_total').text((data.ev_meter.currents.TOTAL/10).toFixed(1) + " A");
-            $('#evmeter_currents_1').text((data.ev_meter.currents.L1/10).toFixed(1) + " A");
-            $('#evmeter_currents_2').text((data.ev_meter.currents.L2/10).toFixed(1) + " A");
-            $('#evmeter_currents_3').text((data.ev_meter.currents.L3/10).toFixed(1) + " A");
-            $('#charge_current').text((data.settings.charge_current/10).toFixed(1) + " A");
-
-            $('#phase_original_total').text((data.phase_currents.original_data.TOTAL/10).toFixed(1) + " A");
-            $('#phase_original_1').text((data.phase_currents.original_data.L1/10).toFixed(1) + " A");
-            $('#phase_original_2').text((data.phase_currents.original_data.L2/10).toFixed(1) + " A");
-            $('#phase_original_3').text((data.phase_currents.original_data.L3/10).toFixed(1) + " A");
-
-            if(data.phase_currents.last_data_update > 0) {
-              $('#p1_data_time').text(new Date(data.phase_currents.last_data_update * 1000).toLocaleTimeString());
-              $('#p1_data_date').text(new Date(data.phase_currents.last_data_update * 1000).toLocaleDateString());
-              $('[id=with_p1_api_data_date]').show();
-              $('[id=with_p1_api_data_time]').show();
-            } else {
-              $('[id=with_p1_api_data_date]').hide();
-              $('[id=with_p1_api_data_time]').hide();
-            }
-
-            if(data.home_battery.last_update == 0) {
-              $('[id=with_homebattery]').hide();
-            } else {
-              $('[id=with_homebattery]').show();
-            }
-
-            if(data.home_battery.current == 0) {
-              $('#battery_status').text("Idle");
-            } else {
-              $('#battery_status').text(data.home_battery.current < 0 ? "Discharging" : "Charging");
-            }
-
-            if(data.settings.mains_meter == "Disabled") {
-              $('[id=with_mainsmeter]').hide();
-            } else {
-              $('[id=with_mainsmeter]').show();
-            }
-
-            if(data.ev_meter.description == "Disabled") {
-              $('[id=with_evmeter]').hide();
-            } else {
-              $('[id=with_evmeter]').show();
-              $('#evmeter_description').text(data.ev_meter.description);
-              $('#evmeter_power').text(data.ev_meter.import_active_power.toFixed(1) + " kW");
-              $('#evmeter_total_kwh').text(data.ev_meter.total_kwh.toFixed(1) + " kWh");
-              $('#evmeter_charged_kwh').text(data.ev_meter.charged_kwh.toFixed(1) + " kWh");
-            }
-
-            $('#solar_start_current').val(data.settings.solar_start_current);
-            $('#solar_max_import_current').val(data.settings.solar_max_import);
-            $('#solar_stop_time').val(data.settings.solar_stop_time);
-
-            if(data.settings.modem == "Experiment" || data.settings.modem == "QCA7000") {
-              $('.with_modem').show();
-            } else {
-              $('.with_modem').hide();
-            }
-
-            if (data.mqtt && !mqttEditMode) {
-                $('#mqtt_host').val(data.mqtt.host);
-                $('#mqtt_port').val(data.mqtt.port);
-                $('#mqtt_username').val(data.mqtt.username);
-                $('#mqtt_password').val(data.mqtt.password);
-                $('#mqtt_topic_prefix').val(data.mqtt.topic_prefix);
-            }
-
-            if (data.settings.lcdlock == 1) {
-              document.getElementById("lcdlock").checked = true;
-              document.getElementById("lcdlock_label").classList.remove("ui-checkbox-off")
-              document.getElementById("lcdlock_label").classList.add("ui-checkbox-on")
-            } else {
-              document.getElementById("lcdlock").checked = false;
-              document.getElementById("lcdlock_label").classList.remove("ui-checkbox-on")
-              document.getElementById("lcdlock_label").classList.add("ui-checkbox-off")
-            }            
-
-            if (data.settings.lock != 0) {
-              if (data.settings.cablelock == 1) {
-                  document.getElementById("cablelock").checked = true;
-                  document.getElementById("cablelock_label").classList.remove("ui-checkbox-off")
-                  document.getElementById("cablelock_label").classList.add("ui-checkbox-on")
-              } else {
-                  document.getElementById("cablelock").checked = false;
-                  document.getElementById("cablelock_label").classList.remove("ui-checkbox-on")
-                  document.getElementById("cablelock_label").classList.add("ui-checkbox-off")
-              }
-            } else {
-              $('[id=cablelock]').hide();
-              $('[id=cablelock_label]').hide();
-            }
-
-            if (data.ocpp) {
-              if (data.ocpp.mode == "Enabled") {
-                $('[id=ocpp_settings]').show();
-                document.getElementById("enable_ocpp").checked = true;
-                document.getElementById("enable_ocpp_label").classList.remove("ui-checkbox-off")
-                document.getElementById("enable_ocpp_label").classList.add("ui-checkbox-on")
-              } else {
-                $('[id=ocpp_settings]').hide();
-                document.getElementById("enable_ocpp").checked = false;
-                document.getElementById("enable_ocpp_label").classList.remove("ui-checkbox-on")
-                document.getElementById("enable_ocpp_label").classList.add("ui-checkbox-off")
-              }
-
-              if (data.ocpp.auto_auth == "Enabled") {
-                $('[id=ocpp_auto_auth_idtag_wrapper]').show();
-                document.getElementById("ocpp_auto_auth").checked = true;
-                document.getElementById("ocpp_auto_auth_label").classList.remove("ui-checkbox-off")
-                document.getElementById("ocpp_auto_auth_label").classList.add("ui-checkbox-on")
-              } else {
-                $('[id=ocpp_auto_auth_idtag_wrapper]').hide();
-                document.getElementById("ocpp_auto_auth").checked = false;
-                document.getElementById("ocpp_auto_auth_label").classList.remove("ui-checkbox-on")
-                document.getElementById("ocpp_auto_auth_label").classList.add("ui-checkbox-off")
-              }
-
-              if (!ocppEditMode) {
-                $('#ocpp_backend_url').val(data.ocpp.backend_url);
-                $('#ocpp_cb_id').val(data.ocpp.cb_id);
-                $('#ocpp_auth_key').val(data.ocpp.auth_key);
-                $('#ocpp_auto_auth_idtag').val(data.ocpp.auto_auth_idtag);
-              }
-
-              $('#ocpp_ws_status').text(data.ocpp.status);
-
-            } else {
-              $('[id=ocpp_config_outer]').hide();
-            }
-
-            setTimeout("loadData()", 5000);
-          });
-      }
-  </script>
-
 
   <!-- Page Wrapper -->
   <div id="wrapper">
@@ -380,7 +26,7 @@
           <div id="content">
               <!-- Begin Page Content -->
               <div class="container-fluid">
-                  <div style="margin-bottom: 20px;">
+                  <div class="4">
                     <div class="card bg-success text-white shadow">
                         <div class="card-body">
                           <h1 class="h3 mb-0 text-white-800">Smart EVSE V3</h1>
@@ -396,7 +42,7 @@
                   <div class="row">
 
                     <!-- Earnings (Monthly) Card Example -->
-                    <div class="col-md-6" style="margin-bottom: 20px;">
+                    <div class="col-md-6 mb-4">
                         <div class="card border-left-primary shadow h-100 py-2">
                             <div class="card-body">
                                 <div class="row no-gutters align-items-center">
@@ -526,7 +172,7 @@
                             </div>
                         </div>
                     </div>
-                      <div class="col-md-6" style="margin-bottom: 20px;">
+                      <div class="col-md-6 mb-4">
                           <div class="card border-left-primary shadow h-100 py-2">
                               <div class="card-body">
                                   <div class="row no-gutters align-items-center">
@@ -541,113 +187,9 @@
                                           </div>
                                           <div class="lcd-password" style="display: flex; align-items: center; gap: 10px;">
                                               <input type="password" id="lcd-password" placeholder="Enter PIN" style="width: 150px; height: 25px; font-size: 14px;">
-                                              <button type="button" id="lcd-password-submit" style="width: 100px; height: 40px;">Submit</button>
+                                              <button type="button" id="lcd-password-submit">Submit</button>
                                           </div>
                                       </div>
-<script>
-    (() => {
-        const ONE_SECOND_MS = 1000;
-        const LCD = document.querySelector('#lcd');
-        const LCD_SCREEN = document.querySelector('#lcd .lcd-screen');
-        const LCD_BUTTONS = document.querySelector('#lcd .lcd-buttons');
-        let LCD_ACTIVATE = document.querySelector('#lcd .lcd-activate');
-        const PASSWORD_FIELD = document.querySelector('#lcd-password');
-        const PASSWORD_SUBMIT = document.querySelector('#lcd-password-submit');
-        let passwordVerified = false;
-
-        function updateLcdImage() {
-            let signal;
-            if (typeof AbortController !== 'undefined') {
-                if (updateLcdImage.controller) {
-                    updateLcdImage.controller.abort('timeout');
-                }
-                updateLcdImage.controller = new AbortController();
-                signal = updateLcdImage.controller.signal;
-            }
-
-            fetch('lcd', {signal})
-                .then(response => {
-                    if (!response.ok) return;
-                    response.blob()
-                        .then(blob => LCD_SCREEN.src = URL.createObjectURL(blob));
-                });
-        }
-
-        function createImageUpdater(updateFunc, minDelay) {
-            let lastExecuted = 0;
-            let timer;
-
-            return function (immediate = false) {
-                const now = Date.now();
-                clearTimeout(timer);
-
-                if (immediate || now - lastExecuted >= minDelay) {
-                    updateFunc();
-                    lastExecuted = now;
-                    timer = setTimeout(() => {
-                        lastExecuted = Date.now();
-                        updateFunc();
-                    }, minDelay);
-                    return;
-                }
-                timer = setTimeout(() => {
-                    lastExecuted = Date.now();
-                    updateFunc();
-                }, minDelay - (now - lastExecuted));
-            };
-        }
-
-        const updateLCD = createImageUpdater(updateLcdImage, ONE_SECOND_MS);
-
-        function sendButtonState(btnName, stateDown) {
-            if (!passwordVerified) {
-                alert("Please enter PIN code first")
-            } else {
-                fetch(`lcd?button=${btnName}&state=${stateDown ? '1' : '0'}`, {method: 'POST'})
-                    .then(() => {
-                        // Immediate LCD screen refresh on button up.
-                        !stateDown && updateLCD(true);
-                    });
-            }
-        }
-
-        function activateLCD() {
-            if (!LCD_ACTIVATE) {
-                return;
-            }
-            LCD_ACTIVATE.remove();
-            setInterval(updateLCD, ONE_SECOND_MS);
-            LCD_ACTIVATE = null;
-        }
-
-        function verifyPassword() {
-            const enteredPassword = PASSWORD_FIELD.value;
-            $.post('/lcd-verify-password', { password: enteredPassword })
-            .done(function(data) {
-                if (data.success) {
-                    passwordVerified = true;
-                    alert("PIN verified. You can now use the buttons.");
-                } else {
-                    alert("Incorrect PIN. Please try again.");
-                }
-            });
-        }
-
-        PASSWORD_SUBMIT.addEventListener('click', verifyPassword);
-
-        ['mousedown', 'mouseup'].forEach(eventName => {
-            LCD_BUTTONS.addEventListener(eventName, event => {
-                activateLCD();
-                const btnName = event.target.dataset.name;
-                const stateDown = event.type === 'mousedown';
-                btnName && sendButtonState(btnName, stateDown);
-            });
-        });
-
-        LCD.addEventListener('mousedown', activateLCD, {once: true});
-        updateLcdImage();
-    })();
-</script>
                                   </div>
                               </div>
                           </div>
@@ -836,7 +378,7 @@
                     </div>
                 </div>
 
-                <div class="col-xl-4 col-md-6 mb-4" id="with_homebattery">
+                <div class="col-xl-4 col-md-6 mb-4 hidden" id="with_phase_details">
                   <div class="card border-left-success shadow h-100 py-2">
                       <div class="card-body">
                           <div class="row no-gutters align-items-center">
@@ -941,7 +483,7 @@
               </div>
 
 
-              <div class="col-xl-4 col-md-6 mb-4" id="with_evmeter" style="display: none;">
+              <div class="col-xl-4 col-md-6 mb-4 hidden" id="with_evmeter_currents">
                 <div class="card border-left-warning shadow h-100 py-2">
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
@@ -992,7 +534,7 @@
                 </div>
               </div>
 
-              <div class="col-xl-4 col-md-6 mb-4" id="with_homebattery" style="display: none;">
+              <div class="col-xl-4 col-md-6 mb-4 hidden" id="with_homebattery">
                 <div class="card border-left-warning shadow h-100 py-2">
                     <div class="card-body">
                         <div class="row no-gutters align-items-center">
@@ -1046,149 +588,8 @@
             <!-- END ROW -->
               <div class="row">
 
-                <script>
-                    function SolStartCurr() {
-                      let val = $('#solar_start_current').val();
-                      $.post( "/settings?solar_start_current=" + val);
-                    }
-                    function SolImportCurr() {
-                      let val = $('#solar_max_import_current').val();
-                      $.post( "/settings?solar_max_import=" + val);
-                    }
-                    function SolStopTime() {
-                      let val = $('#solar_stop_time').val();
-                      $.post( "/settings?stop_timer=" + val);
-                    }
-
-                    function activate(mode) {
-                      var starttime = document.querySelector('input[name="starttime"]').value;
-                      var stoptime = document.querySelector('input[name="stoptime"]').value;
-                      var repeat2 = +document.getElementById('daily_repeat').checked;
-                      if (mode == 1 || mode == 2 || mode == 3) {
-                        override_current=$('#mode_override_current').val();
-                        $.post( "/settings?mode=" + mode +  "&override_current=" + (override_current * 10) + "&starttime=" + starttime + "&stoptime=" + stoptime + "&repeat=" + repeat2);
-                      } else {
-                        $.post( "/settings?mode=" + mode  + "&starttime=" + starttime + "&stoptime=" + stoptime + "&repeat=" + repeat2);
-                      }
-                      event.preventDefault();
-                    }
-                    function toggleMqttEdit() {
-                        mqttEditMode = !mqttEditMode;
-                        $('.mqtt_settings').toggle();
-                        if (mqttEditMode) {
-                            $('#edit_mqtt_button').text("Close Settings")
-                        } else {
-                            $('#edit_mqtt_button').text("Edit Settings")
-                        }
-                    }
-                    function configureMqtt() {
-                        var mqtt_host=$('#mqtt_host').val();
-                        var mqtt_port=$('#mqtt_port').val();
-                        var mqtt_username=$('#mqtt_username').val();
-                        var mqtt_password=$('#mqtt_password').val();
-                        var mqtt_topic_prefix=$('#mqtt_topic_prefix').val();
-                        $.post( "/settings?mqtt_update=1&mqtt_host=" + mqtt_host +
-                            "&mqtt_port=" + mqtt_port + "&mqtt_username=" + mqtt_username +
-                            "&mqtt_password=" + mqtt_password + "&mqtt_topic_prefix=" + mqtt_topic_prefix);
-                        alert('Settings applied');
-                        toggleMqttEdit();
-                        event.preventDefault();
-                    }
-                    function toggleLCDlock() {
-                      var LCDlockCheckbox = document.getElementById("lcdlock");
-                      $.post( "/settings?lcdlock=" + (LCDlockCheckbox.checked == true ? 1 : 0));
-                    }
-                    function toggleCableLock() {
-                      var CableLockCheckbox = document.getElementById("cablelock");
-                      $.post( "/settings?cablelock=" + (CableLockCheckbox.checked == true ? 1 : 0));
-                    }
-                    function toggleEnableOcpp() {
-                      var enableOcppCheckbox = document.getElementById("enable_ocpp");
-                      $.post( "/settings?ocpp_update=1&ocpp_mode=" + (enableOcppCheckbox.checked == true ? 1 : 0));
-                    }
-                    function toggleEnableOcppAutoAuth() {
-                      var autoAuthCheckbox = document.getElementById("ocpp_auto_auth");
-                      $.post( "/settings?ocpp_update=1&ocpp_auto_auth=" + (autoAuthCheckbox.checked == true ? 1 : 0));
-                      //show idTag box immediately if Auto auth checkbox is checked
-                      if (autoAuthCheckbox.checked) {
-                        loadData();
-                      }
-                    }
-                    function toggleOcppEdit() {
-                        ocppEditMode = !ocppEditMode;
-                        if (ocppEditMode) {
-                            $('#ocpp_save_btn').text("Save");
-                            $('#ocpp_backend_url').prop("disabled",false);
-                            $('#ocpp_cb_id').prop("disabled",false);
-                            $('#ocpp_auth_key').prop("disabled",false);
-                            $('#ocpp_auto_auth').prop("disabled",false);
-                            $('#ocpp_auto_auth_label').prop("disabled",false);
-                            $('#ocpp_auto_auth_idtag').prop("disabled",false);
-                            document.getElementById("ocpp_backend_url").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_cb_id").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_auth_key").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth_label").classList.remove("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth_idtag").classList.remove("ui-state-disabled");
-                        } else {
-                            configureOcpp();
-                            $('#ocpp_save_btn').text("Edit Settings");
-                            $('#ocpp_backend_url').prop("disabled",true);
-                            $('#ocpp_cb_id').prop("disabled",true);
-                            $('#ocpp_auth_key').prop("disabled",true);
-                            $('#ocpp_auto_auth').prop("disabled",true);
-                            $('#ocpp_auto_auth_label').prop("disabled",true);
-                            $('#ocpp_auto_auth_idtag').prop("disabled",true);
-                            document.getElementById("ocpp_backend_url").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_cb_id").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_auth_key").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth_label").classList.add("ui-state-disabled");
-                            document.getElementById("ocpp_auto_auth_idtag").classList.add("ui-state-disabled");
-                        }
-                    }
-                    function configureOcpp() {
-                        var ocpp_backend_url=$('#ocpp_backend_url').val();
-                        var ocpp_cb_id=$('#ocpp_cb_id').val();
-                        var ocpp_auth_key=$('#ocpp_auth_key').val();
-                        var ocpp_auto_auth_idtag=$('#ocpp_auto_auth_idtag').val();
-
-                        $.post( "/settings?ocpp_update=1&ocpp_backend_url=" + ocpp_backend_url +
-                            "&ocpp_cb_id=" + ocpp_cb_id + "&ocpp_auth_key=" + ocpp_auth_key +
-                            "&ocpp_auto_auth_idtag=" + ocpp_auto_auth_idtag);
-
-                        event.preventDefault();
-                    }
-                    function reboot() {
-                        window.location.href = "/reboot";
-                    }
-                    function update() {
-                        window.location.href = "/update";
-                    }
-                    function rawData() {
-                      window.location.href = "/settings";
-                    }
-                    function gotoDoc() {
-                      const version = $('#version').data('version'); // get version from attribute
-                      if (version && version.startsWith('v')) {
-                        window.location.href = 'https://github.com/dingo35/SmartEVSE-3.5/tree/' + version + '#documentation';
-                      } else {
-                        window.location.href = 'https://github.com/dingo35/SmartEVSE-3.5/tree/master?tab=readme-ov-file#documentation';
-                      }
-                    }
-                    function postPWM(value) {
-                       $.post("/settings?override_pwm=" + value);
-                       event.preventDefault();
-                     }
-                     function postRequiredEVCCID() {
-                      var required_evccid=$('#required_evccid').val();
-                       $.post("/settings?required_evccid=" + required_evccid);
-                       event.preventDefault();
-                     }
-                </script>
-
                 <!-- Earnings (Monthly) Card Example -->
-                <div style="margin-bottom: 20px;">
+                <div class="mb-4">
                     <div class="card border-left-primary shadow h-100 py-2">
                         <div class="card-body">
                             <div class="row no-gutters align-items-center">
@@ -1204,7 +605,7 @@
                                           <span id="loadbl_text_master">Master node - control changes are propagated to Slave node(s).</span>
                                       </div>
                                     </div>
--->                                    
+-->
                                     <div class="row no-gutters align-items-center">
                                         <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width:120px;">
                                           <div class="tooltip font-weight-bold text-gray-800">
@@ -1213,14 +614,14 @@
                                           </div>
                                         </div>
                                         <div class="col">
+                                          <button type="button" id="mode_0" onclick="activate(0)">OFF</button>
+                                          <button type="button" id="mode_4" onclick="activate(4)">PAUSE</button>
+                                          <button type="button" id="mode_1" onclick="activate(1)">NORMAL</button>
+                                          <span id="with_mainsmeter_buttons">
+                                            <button type="button" id="mode_2" onclick="activate(2)">SOLAR</button>
+                                            <button type="button" id="mode_3" onclick="activate(3)">SMART</button>
+                                          </span>
                                           <form class="form-inline" id="form_mode">
-                                            <button id="mode_0" onclick="activate('0')" style="width: 100px; display:inline-block;">OFF</button>
-                                            <button id="mode_4" onclick="activate('4')" style="width: 100px; display:inline-block;">PAUSE</button>
-                                            <button id="mode_1" onclick="activate('1')" style="width: 120px; display:inline-block;">NORMAL</button>
-                                            <div id="with_mainsmeter" style="display: inline">
-                                              <button id="mode_2" onclick="activate('2')" style="width: 100px; display:inline-block;">SOLAR</button>
-                                              <button id="mode_3" onclick="activate('3')" style="width: 100px; display:inline-block;">SMART</button>
-                                            </div>
                                             <div class="form-group">
                                                 <label for="starttime" style="min-width:100px;">
                                                   <div class="tooltip">...STARTING:
@@ -1276,10 +677,10 @@
                                           Actions:
                                         </div>
                                         <div class="col">
-                                          <button onclick="reboot()" style="width: 100px; display:inline-block;" title="Reboot your device">Reboot</button>
-                                          <button onclick="update()" style="width: 100px; display:inline-block;" title="Update your firmware">Update</button>
-                                          <button onclick="rawData()" style="width: 120px; display:inline-block;" title="Display your settings in JSON format">Raw Data</button>
-                                          <button onclick="gotoDoc()" style="width: 120px; display:inline-block;" title="Show the online documentation">Help</button>
+                                          <button type="button" onclick="reboot()" title="Reboot your device">Reboot</button>
+                                          <button type="button" onclick="update()" title="Update your firmware">Update</button>
+                                          <button type="button" onclick="rawData()" title="Display your settings in JSON format">Raw Data</button>
+                                          <button type="button" onclick="gotoDoc()" title="Show the online documentation">Help</button>
                                         </div>
                                     </div>
                                     <div class="row no-gutters align-items-center">
@@ -1301,10 +702,10 @@
                                         </div>
                                         <div class="col">
                                           <form class="form-inline" id="form_pwm">
-                                            <button onclick="postPWM(0)" style="width: 120px; display:inline-block;">0&#37;</button>
-                                            <button onclick="postPWM(50)" style="width: 120px; display:inline-block;">5&#37;</button>
-                                            <button onclick="postPWM(1024)" style="width: 120px; display:inline-block;">100&#37;</button>
-                                            <button onclick="postPWM(-1)" style="width: 120px; display:inline-block;">reset</button>
+                                            <button type="button" onclick="postPWM(0)">0%</button>
+                                            <button type="button" onclick="postPWM(50)">5%</button>
+                                            <button type="button" onclick="postPWM(1024)">100%</button>
+                                            <button type="button" onclick="postPWM(-1)">reset</button>
                                           </form>
                                         </div>
                                     </div>
@@ -1315,7 +716,7 @@
                                       <div class="col">
                                         <form class="form-inline" id="form_required_evccid">
                                           <input placeholder="EVCCID to require" id="required_evccid">
-                                          <button onclick="postRequiredEVCCID()" style="width: 120px; display:inline-block;">Update</button>
+                                          <button type="button" onclick="postRequiredEVCCID()">Update</button>
                                         </form>
                                       </div>
                                     </div>
@@ -1324,7 +725,7 @@
                             </div>
                         </div>
                     </div>
-                  <div style="margin-bottom: 20px;" class="config">
+                  <div class="config mb-4">
                       <div class="card border-left-primary shadow h-100 py-2">
                         <div class="card-body">
                             <div class="row no-gutters align-items-center">
@@ -1335,14 +736,14 @@
                                             MQTT:
                                         </div>
                                         <div class="col">
-                                            <button onclick="toggleMqttEdit()" style="display:inline-block;" id="edit_mqtt_button">Edit Settings</button>
+                                            <button type="button" onclick="toggleMqttEdit()" id="edit_mqtt_button">Edit Settings</button>
                                             <div class="mqtt_settings" style="display:none">
                                                 <label>Host: <input id="mqtt_host" title="Leave empty to disable MQTT"></label>
                                                 <label>Port: <input id="mqtt_port"></label>
                                                 <label>Username: <input id="mqtt_username" title="Leave empty for anonymous MQTT"></label>
                                                 <label>Password: <input id="mqtt_password" title="Leave empty for anonymous MQTT"></label>
                                                 <label>Topic Prefix: <input id="mqtt_topic_prefix"></label>
-                                                <button onclick="configureMqtt()" style="display:inline-block;">Save</button>
+                                                <button type="button" onclick="configureMqtt()">Save</button>
                                             </div>
                                         </div>
                                     </div>
@@ -1351,7 +752,7 @@
                             </div>
                         </div>
                     </div>
-                    <div id="ocpp_config_outer" style="margin-bottom: 20px;" class="config">
+                    <div id="ocpp_config_outer" class="config mb-4">
                       <div class="card border-left-primary shadow h-100 py-2">
                         <div class="card-body">
                             <div class="row no-gutters align-items-center">
@@ -1387,7 +788,7 @@
                                                   </div>
                                                 </div>
                                               </div>
-                                              <button id="ocpp_save_btn" onclick="toggleOcppEdit()" style="display:inline-block;">Edit Settings</button>
+                                              <button type="button" id="ocpp_save_btn" onclick="toggleOcppEdit()">Edit Settings</button>
                                           </div>
                                         </div>
                                     </div>
@@ -1401,27 +802,12 @@
         </div>
       </div>
   </div>
-  <script>
-    // Get the current date and time
-    var now = new Date();
-    $('[id=stoptime_group]').hide();
-    $('[id=daily_repeat_group]').hide();
 
-    // Format the date and time as a string that can be used as the value of the input field
-    var dateString = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
-    var timeString = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
-    var dateTimeString = dateString + 'T' + timeString;
+  <script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
+  <script src="https://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
 
-    // Set the value of the input field to the current date and time
-    document.getElementById('starttime').value = dateTimeString;
-    document.getElementById('stoptime').value = dateTimeString;
-    document.getElementById('starttime').onchange = function () {
-        $('[id=stoptime_group]').show();
-    }
-    document.getElementById('stoptime').onchange = function () {
-        $('[id=daily_repeat_group]').show();
-    }
-    $('daily_repeat').prop('checked', false);
-  </script>
+  <script src="main.js"></script>
+
 </body>
 </html>
