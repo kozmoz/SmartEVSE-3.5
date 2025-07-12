@@ -173,11 +173,6 @@ function initializeDisplayData(data) {
     if (data.evse.loadbl < 2) {
         const selectElement = $qs('#mode_override_current');
         selectElement.value = '0';
-        const noOverrideOption = document.createElement('option');
-        noOverrideOption.value = '0';
-        noOverrideOption.text = 'no override';
-        selectElement.appendChild(noOverrideOption);
-
         for (let x = minCurrent; x <= maxCurrent; x++) {
             const option = document.createElement('option');
             option.value = '' + x;
@@ -203,10 +198,11 @@ function loadData(data) {
         $qs('#mode_' + x).classList.toggle('btn-success', (x === data.mode_id));
     }
 
-    $qs('#dutycycle').textContent = (data.evse.pwm * 100 / 1024).toFixed(0) + ' %';
-    $qs('.with_solar').classList.toggle('hidden', (data.mode_id !== MODE_SOLAR));
-    $qs('#override_current_box').classList.toggle('hidden', (data.mode_id === MODE_SOLAR));
-    $qs('#override_current_box2').classList.toggle('hidden', (data.mode_id === MODE_SOLAR));
+    $qs('#dutycycle').textContent = `${(data.evse.pwm * 100 / 1024).toFixed(0)} %`;
+    const hasSolar = data.mode_id === MODE_SOLAR;
+    $qs('.with_solar').classList.toggle('hidden', !hasSolar);
+    $qs('#override_current_box').classList.toggle('hidden', hasSolar);
+    $qs('#override_current_box2').classList.toggle('hidden', hasSolar);
 
     if (data.ev_state) {
 
@@ -228,16 +224,10 @@ function loadData(data) {
         $qs('#full_at').title = time_until_full > 0 ? `${Math.round(time_until_full / 60)} min to go` : 'N/A';
     }
 
-    if (data.mqtt) {
-        $qs('#mqtt').textContent = (data.mqtt.status) || 'N/A';
-        $qs('#mqtt').classList.toggle('hidden', false);
-        $qs('#mqtt_config').classList.toggle('hidden', false);
-    } else {
-        $qs('#mqtt').textContent = '';
-        $qs('#mqtt').classList.toggle('hidden', true);
-        $qs('.config').classList.toggle('hidden', true);
-        $qs('#mqtt_config').classList.toggle('hidden', true);
-    }
+    $qs('#mqtt').textContent = data.mqtt ? (data.mqtt.status || 'N/A') : '';
+    $qs('#mqtt').classList.toggle('hidden', !data.mqtt);
+    $qs('.config').classList.toggle('hidden', !data.mqtt);
+    $qs('#mqtt_config').classList.toggle('hidden', !data.mqtt);
 
     if (data.evse.loadbl > 1) {
         // We're a slave.
@@ -516,9 +506,12 @@ function initDisplay() {
     }
 
     function verifyPassword(event) {
+
+        // Prevent the form submit.
         if (event?.preventDefault) {
             event.preventDefault();
         }
+
         const enteredPassword = PASSWORD_FIELD.value;
         fetch(`${endpoint}lcd-verify-password`, {
             method: 'POST',
@@ -765,7 +758,10 @@ const $qs = (selector) => {
             style: {display: ''},
             textContent: '',
             value: '',
-            classList: {toggle: () => {}}
+            classList: {
+                toggle: () => {
+                }
+            }
         };
     }
     return result;
