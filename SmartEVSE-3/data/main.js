@@ -1,7 +1,9 @@
 const MODE_SMART = 1;
 const MODE_SOLAR = 2;
 
-const LCD_LOCK_BUTTONS_DISABLED = 1;
+const LOCK_BUTTONS_DISABLED = 1;
+
+const LOAD_BALANCE_MASTER = 1;
 
 // Automatic debug URL.
 const endpoint = !document.location.href.includes('localhost')
@@ -171,31 +173,30 @@ function initializeDisplayData(data) {
 
     // value 0 = no override
     if (data.evse.loadbl < 2) {
-        const selectElement = $qs('#mode_override_current');
-        selectElement.value = '0';
+        const selectElm = $qs('#mode_override_current');
+        selectElm.value = '0';
         for (let x = minCurrent; x <= maxCurrent; x++) {
             const option = document.createElement('option');
             option.value = '' + x;
             option.text = x + 'A';
-            selectElement.appendChild(option);
+            selectElm.appendChild(option);
         }
     }
     $qs('#required_evccid').value = data.settings.required_evccid || "";
 }
-
-const LOAD_BALANCE_MASTER = 1;
 
 /**
  * @param {SmartEVSEData} data
  */
 function loadData(data) {
 
+    // Initialize once.
     initializeDisplayData(data);
 
     // Show the active mode-button (in green).
     $qs('#mode').textContent = data.mode;
     for (let x = 0; x <= 4; x++) {
-        $qs('#mode_' + x).classList.toggle('btn-success', (x === data.mode_id));
+        $qs('#mode_' + x).classList.toggle('btn-success', x === data.mode_id);
     }
 
     $qs('#dutycycle').textContent = `${(data.evse.pwm * 100 / 1024).toFixed(0)} %`;
@@ -204,8 +205,10 @@ function loadData(data) {
     $qs('#override_current_box').classList.toggle('hidden', hasSolar);
     $qs('#override_current_box2').classList.toggle('hidden', hasSolar);
 
-    if (data.ev_state) {
+    const hasModem = data.settings.modem === "Experiment" || data.settings.modem === "QCA7000";
+    $qsa('.with_modem').forEach(el => el.classList.toggle('hidden', !hasModem));
 
+    if (data.ev_state) {
         const full_soc = data.ev_state.full_soc;
         const initial_soc = data.ev_state.initial_soc;
         const computed_soc = data.ev_state.computed_soc;
@@ -266,11 +269,9 @@ function loadData(data) {
     $qs('#error').textContent = hasError ? data.evse.error : '';
     $qs('#with_errors').classList.toggle('hidden', !hasError);
 
-    if (data.evse.rfid !== "Not Installed") {
-        $qs('#rfid').textContent = data.evse.rfid;
-    } else {
-        $qs('#show_rfid').classList.toggle('hidden', true);
-    }
+    const hasRFID = data.evse.rfid !== "Not Installed";
+    $qs('#rfid').textContent = hasRFID ? data.evse.rfid : '';
+    $qs('#show_rfid').classList.toggle('hidden', !hasRFID);
 
     if (data.evse.solar_stop_timer > 0) {
         $qs('#state').textContent += ` (Stopping in ${data.evse.solar_stop_timer}s)`;
@@ -282,12 +283,16 @@ function loadData(data) {
     $qs('#enable_C2').textContent = data.settings.enable_C2;
 
     if (data.settings.starttime) {
-        $qs('#starttime_date_time').textContent = `${new Date(data.settings.starttime * 1000).toLocaleDateString()} ${new Date(data.settings.starttime * 1000).toLocaleTimeString()}`;
+        const startTime = new Date(data.settings.starttime * 1000).toLocaleDateString();
+        const startDate = new Date(data.settings.starttime * 1000).toLocaleTimeString();
+        $qs('#starttime_date_time').textContent = `${startTime} ${startDate}`;
     } else {
         $qs('#starttime_date_time').textContent = "none";
     }
     if (data.settings.stoptime) {
-        $qs('#stoptime_date_time').textContent = `${new Date(data.settings.stoptime * 1000).toLocaleDateString()} ${new Date(data.settings.stoptime * 1000).toLocaleTimeString()}`;
+        const stopTime = new Date(data.settings.stoptime * 1000).toLocaleDateString();
+        const stopDate = new Date(data.settings.stoptime * 1000).toLocaleTimeString();
+        $qs('#stoptime_date_time').textContent = `${stopTime} ${stopDate}`;
     } else {
         $qs('#stoptime_date_time').textContent = "none";
     }
@@ -310,20 +315,17 @@ function loadData(data) {
     $qs('#phase_original_2').textContent = (data.phase_currents.original_data.L2 / 10).toFixed(1) + " A";
     $qs('#phase_original_3').textContent = (data.phase_currents.original_data.L3 / 10).toFixed(1) + " A";
 
-    if (data.phase_currents.last_data_update > 0) {
+    const hasDataUpdate = data.phase_currents.last_data_update > 0;
+    if (hasDataUpdate) {
         $qs('#p1_data_time').textContent = new Date(data.phase_currents.last_data_update * 1000).toLocaleTimeString();
         $qs('#p1_data_date').textContent = new Date(data.phase_currents.last_data_update * 1000).toLocaleDateString();
-        $qs('#with_p1_api_data_date').classList.toggle('hidden', false);
-        $qs('#with_p1_api_data_time').classList.toggle('hidden', false);
-    } else {
-        $qs('#with_p1_api_data_date').classList.toggle('hidden', true);
-        $qs('#with_p1_api_data_time').classList.toggle('hidden', true);
     }
-
+    $qs('#with_p1_api_data_date').classList.toggle('hidden', !hasDataUpdate);
+    $qs('#with_p1_api_data_time').classList.toggle('hidden', !hasDataUpdate);
     $qs('#with_phase_details').classList.toggle('hidden', !data.home_battery.last_update);
     $qs('#with_homebattery').classList.toggle('hidden', !data.home_battery.last_update);
 
-    if (!data.home_battery.current) {
+    if (!data.home_battery?.current) {
         $qs('#battery_status').textContent = "Idle";
     } else {
         $qs('#battery_status').textContent = data.home_battery.current < 0 ? "Discharging" : "Charging";
@@ -347,67 +349,33 @@ function loadData(data) {
     $qs('#solar_max_import_current').value = data.settings.solar_max_import;
     $qs('#solar_stop_time').value = data.settings.solar_stop_time;
 
-    const hasModem = data.settings.modem === "Experiment" || data.settings.modem === "QCA7000";
-    $qsa('.with_modem').forEach(el => el.classList.toggle('hidden', !hasModem));
-
-    if (data.mqtt && !mqttEditMode) {
-        $qs('#mqtt_host').value = data.mqtt.host;
+    const hasMQTT = !!data.mqtt;
+    if (hasMQTT && !mqttEditMode) {
+        $qs('#mqtt_host').value = data.mqtt.host || '';
         $qs('#mqtt_port').value = data.mqtt.port;
-        $qs('#mqtt_username').value = data.mqtt.username;
-        $qs('#mqtt_password').value = data.mqtt.password;
-        $qs('#mqtt_topic_prefix').value = data.mqtt.topic_prefix;
+        $qs('#mqtt_username').value = data.mqtt.username || '';
+        $qs('#mqtt_password').value = data.mqtt.password || '';
+        $qs('#mqtt_topic_prefix').value = data.mqtt.topic_prefix || '';
     }
 
-    const lcdlock = $qs("#lcdlock");
-    const lcdlockLabel = $qs("#lcdlock_label");
-    if (data.settings.lcdlock === LCD_LOCK_BUTTONS_DISABLED) {
-        lcdlock.checked = true;
-        lcdlockLabel.classList.remove("ui-checkbox-off");
-        lcdlockLabel.classList.add("ui-checkbox-on");
-    } else {
-        lcdlock.checked = false;
-        lcdlockLabel.classList.remove("ui-checkbox-on");
-        lcdlockLabel.classList.add("ui-checkbox-off");
-    }
+    const lcdlockElm = $qs("#lcdlock");
+    lcdlockElm.checked = data.settings.lcdlock === LOCK_BUTTONS_DISABLED;
 
-    if (data.settings.lock !== 0) {
-        if (data.settings.cablelock === 1) {
-            $qs("#cablelock").checked = true;
-            $qs("#cablelock_label").classList.remove("ui-checkbox-off")
-            $qs("#cablelock_label").classList.add("ui-checkbox-on")
-        } else {
-            $qs("#cablelock").checked = false;
-            $qs("#cablelock_label").classList.remove("ui-checkbox-on")
-            $qs("#cablelock_label").classList.add("ui-checkbox-off")
-        }
+    if (data.settings.lock) {
+        const cableLockElm = $qs("#cablelock");
+        cableLockElm.checked = data.settings.cablelock === LOCK_BUTTONS_DISABLED;
     } else {
-        $qs('#cablelock').classList.toggle('hidden', true);
-        $qs('#cablelock_label').classList.toggle('hidden', true);
+        $qs("#cablelock_form").classList.toggle('hidden', true);
     }
 
     if (data.ocpp) {
-        if (data.ocpp.mode === "Enabled") {
-            $qs('#ocpp_settings').classList.toggle('hidden', false);
-            $qs("#enable_ocpp").checked = true;
-            $qs("#enable_ocpp_label").classList.remove("ui-checkbox-off");
-            $qs("#enable_ocpp_label").classList.add("ui-checkbox-on");
-        } else {
-            $qs('#ocpp_settings').classList.toggle('hidden', true);
-            $qs("#enable_ocpp").checked = false;
-            $qs("#enable_ocpp_label").classList.remove("ui-checkbox-on");
-            $qs("#enable_ocpp_label").classList.add("ui-checkbox-off");
-        }
-        if (data.ocpp.auto_auth === "Enabled") {
-            $qs('#ocpp_auto_auth_idtag_wrapper').classList.toggle('hidden', false);
-            $qs("#ocpp_auto_auth").checked = true;
-            $qs("#ocpp_auto_auth_label").classList.remove("ui-checkbox-off");
-            $qs("#ocpp_auto_auth_label").classList.add("ui-checkbox-on");
-        } else {
-            $qs('#ocpp_auto_auth_idtag_wrapper').classList.toggle('hidden', true);
-            $qs("#ocpp_auto_auth").checked = false;
-            $qs("#ocpp_auto_auth_label").classList.remove("ui-checkbox-on");
-            $qs("#ocpp_auto_auth_label").classList.add("ui-checkbox-off");
-        }
+        const isOcppEnabled = data.ocpp.mode === "Enabled";
+        $qs('#ocpp_settings').classList.toggle('hidden', !isOcppEnabled);
+        $qs("#enable_ocpp").checked = isOcppEnabled;
+
+        const isOCPPAutoAuthEnabled = data.ocpp.auto_auth === "Enabled";
+        $qs('#ocpp_auto_auth_idtag_wrapper').classList.toggle('hidden', !isOCPPAutoAuthEnabled);
+        $qs("#ocpp_auto_auth").checked = isOCPPAutoAuthEnabled;
 
         if (!ocppEditMode) {
             $qs('#ocpp_backend_url').value = data.ocpp.backend_url;
@@ -601,13 +569,8 @@ function activate(mode) {
 
 function toggleMqttEdit() {
     mqttEditMode = !mqttEditMode;
-    if (mqttEditMode) {
-        $qs('#edit_mqtt_button').textContent = "Close Settings";
-        $qs('.mqtt_settings').classList.toggle('hidden', false);
-        return;
-    }
-    $qs('#edit_mqtt_button').textContent = "Edit Settings";
-    $qs('.mqtt_settings').classList.toggle('hidden', true);
+    $qs('#edit_mqtt_button').textContent = mqttEditMode ? "Close Settings" : "Edit Settings";
+    $qs('#mqtt_settings').classList.toggle('hidden', !mqttEditMode);
 }
 
 function configureMqtt() {

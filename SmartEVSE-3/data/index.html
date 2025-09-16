@@ -692,11 +692,15 @@
                                         Lock:
                                       </div>
                                       <div class="col">
-                                          <div class="lock-options">
-                                              <input type="checkbox" class="form-check-input" id="lcdlock" onclick="toggleLCDlock()">
-                                              <label class="form-check-label" style="width: 140px; display:inline-block;" for="lcdlock" id="lcdlock_label" title="Lock buttons on LCD screen">LCD Lock</label>
-                                              <input type="checkbox" class="form-check-input" id="cablelock" onclick="toggleCableLock()">
-                                              <label class="form-check-label" style="width: 155px; display:inline-block;" for="cablelock" id="cablelock_label" title="Lock cable with actuator on EVSE side">Cable Lock</label>
+                                          <div class="form-check">
+                                              <input class="form-check-input" type="checkbox" value="" id="lcdlock" onclick="toggleLCDlock()">
+                                              <label class="form-check-label" for="lcdlock"
+                                                     title="Lock buttons on LCD screen">LCD Lock</label>
+                                          </div>
+                                          <div class="form-check" id="cablelock_form">
+                                              <input class="form-check-input" type="checkbox" value="" id="cablelock" onclick="toggleCableLock()">
+                                              <label class="form-check-label" for="cablelock" id="cablelock_label"
+                                                     title="Lock cable with actuator on EVSE side">Cable Lock</label>
                                           </div>
                                       </div>
                                     </div>
@@ -740,18 +744,39 @@
                                 <div class="col mr-2">
                                     <div class="text font-weight-bold text-primary text-uppercase mb-1">Config</div>
                                     <div class="row no-gutters align-items-center" id="mqtt_config">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
+                                        <div class="col-3 h5 mb-0 mr-3 font-weight-bold text-gray-800">
                                             MQTT:
                                         </div>
                                         <div class="col">
-                                            <button type="button" onclick="toggleMqttEdit()" id="edit_mqtt_button">Edit Settings</button>
-                                            <div class="mqtt_settings" style="display:none">
-                                                <label>Host: <input id="mqtt_host" title="Leave empty to disable MQTT"></label>
-                                                <label>Port: <input id="mqtt_port"></label>
-                                                <label>Username: <input id="mqtt_username" title="Leave empty for anonymous MQTT"></label>
-                                                <label>Password: <input id="mqtt_password" title="Leave empty for anonymous MQTT"></label>
-                                                <label>Topic Prefix: <input id="mqtt_topic_prefix"></label>
-                                                <button type="button" onclick="configureMqtt()">Save</button>
+                                            <button type="button" class="btn btn-secondary" onclick="toggleMqttEdit()" id="edit_mqtt_button">Edit Settings</button>
+                                            <div id="mqtt_settings" class="mt-4 hidden">
+
+                                                <div class="form-group">
+                                                    <label for="mqtt_host">Host:</label>
+                                                    <input id="mqtt_host" type="text" class="form-control" aria-describedby="mqtt_help">
+                                                    <small id="mqtt_help" class="form-text text-muted">Leave empty to disable MQTT</small>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="mqtt_port">Port:</label>
+                                                    <input id="mqtt_port" type="text" class="form-control form-control-sm w-25">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="mqtt_username">Username:</label>
+                                                    <input id="mqtt_username" type="text" class="form-control" aria-describedby="mqtt_username_help">
+                                                    <small id="mqtt_username_help" class="form-text text-muted">Leave empty for anonymous MQTT</small>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="mqtt_password">Password:</label>
+                                                    <input id="mqtt_password" type="text" class="form-control" aria-describedby="mqtt_password_help">
+                                                    <small id="mqtt_password_help" class="form-text text-muted">Leave empty for anonymous MQTT</small>
+
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="mqtt_topic_prefix">Topic Prefix:</label>
+                                                    <input id="mqtt_topic_prefix" type="text" class="form-control">
+                                                </div>
+
+                                                <button type="button" class="btn btn-success" onclick="configureMqtt()">Save</button>
                                             </div>
                                         </div>
                                     </div>
@@ -774,7 +799,8 @@
                                         <div class="col">
                                           <input type="checkbox" class="form-check-input" id="enable_ocpp" onclick="toggleEnableOcpp()">
                                           <label class="form-check-label" for="enable_ocpp" id="enable_ocpp_label" title="Check to enable connection to a backoffice provider">Enable OCPP</label>
-                                          <div id="ocpp_settings" style="display: none;">
+
+                                            <div id="ocpp_settings" class="hidden">
                                               <div class="row no-gutters align-items-center" style="margin-top:20px;margin-bottom:10px">
                                                 <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 200px">
                                                     WebSocket status:
