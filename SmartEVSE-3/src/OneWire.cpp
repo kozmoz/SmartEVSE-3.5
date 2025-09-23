@@ -24,21 +24,26 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+
+unsigned char RFID[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+#ifdef SMARTEVSE_VERSION //ESP32
 #include <string.h>
 #include <Preferences.h>
 
-#include "main.h"
+#include "esp32.h"
 #include "utils.h"
 #include "OneWire.h"
 #include "OneWireESP32.h"
 
 #define RFIDSIZE 700
 
-unsigned char RFID[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 unsigned char RFIDlist[RFIDSIZE];                                               // holds up to 100 RFIDs
 
-OneWire32 ds(PIN_SW_IN, 0, 1, 0);                                               //gpio pin, tx, rx, parasite power
-
+extern uint8_t PIN_SW_IN;
+OneWire32& ds() {                                             //gpio pin, tx, rx, parasite power
+    static OneWire32* ans = new OneWire32(PIN_SW_IN, 0, 1, 0);
+    return *ans;
+}
 // ############################# OneWire functions #############################
 
 #if FAKE_RFID
@@ -59,12 +64,13 @@ unsigned char OneWireReadCardId(void) {
         return 0; //card is already read, no new card
 }
 
-#else
+#else //FAKE_RFID
+#if SMARTEVSE_VERSION >= 30 && SMARTEVSE_VERSION < 40 //ESP32v3
 unsigned char OneWireReadCardId(void) {
     uint8_t x;
 
     // Use ReadRom command (33)
-    if (!ds.readRom(RFID)) {                                                    // read Family code (0x01) RFID ID (6 bytes) and crc8
+    if (!ds().readRom(RFID)) {                                                    // read Family code (0x01) RFID ID (6 bytes) and crc8
         if (crc8(RFID,8)) {
             RFID[0] = 0;                                                        // CRC incorrect, clear first byte of RFID buffer
             return 0;
@@ -77,6 +83,7 @@ unsigned char OneWireReadCardId(void) {
     return 0;
 }
 #endif
+#endif //FAKE_RFID
 
 
 // ############################## RFID functions ##############################
@@ -252,9 +259,7 @@ void CheckRFID(void) {
     uint16_t x;
     // When RFID is enabled, a OneWire RFID reader is expected on the SW input
     uint8_t RFIDReader = getItemValue(MENU_RFIDREADER);
-    if (RFIDReader) {                                        // RFID Reader set to Enabled, Learn or Delete
-        if (OneWireReadCardId() ) {                                             // Read card ID
-#if ENABLE_OCPP
+#if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
             if (OcppMode && RFIDReader == 6) {                                      // Remote authorization via OCPP?
                 // Use OCPP
                 if (!RFIDstatus) {
@@ -283,9 +288,9 @@ void CheckRFID(void) {
                         x = MatchRFID();
                         if (x && !RFIDstatus) {
                             _LOG_A("RFID card found!\n");
-                            if (Access_bit) {
-                                setAccess(false);                                   // Access Off, Switch back to state B1/C1
-                            } else setAccess(true);
+                            if (AccessStatus == ON) {
+                                setAccess(OFF);                                     // Access Off, Switch back to state B1/C1
+                            } else setAccess(ON);
 
                             RFIDstatus = 1;
                         }  else if (!x) RFIDstatus = 7;                             // invalid card
@@ -295,11 +300,11 @@ void CheckRFID(void) {
                         x = MatchRFID();
                         if (x && !RFIDstatus) {
                             _LOG_A("RFID card found!\n");
-                            if (!Access_bit) {
+                            if (AccessStatus == OFF) {
                                 CardOffset = x;                                     // store cardoffset from current card
-                                setAccess(true);                                    // Access On
+                                setAccess(ON);                                      // Access On
                             } else if (CardOffset == x) {
-                                setAccess(false);                                   // Access Off, Switch back to state B1/C1
+                                setAccess(OFF);                                     // Access Off, Switch back to state B1/C1
                             }
                             RFIDstatus = 1;
                         }  else if (!x) RFIDstatus = 7;                             // invalid card
@@ -332,6 +337,132 @@ void CheckRFID(void) {
                         break;
                 }
             }
-        } else RFIDstatus = 0;
+            if (RFIDstatus <= 3)
+                BuzzConfirmation();
+            else
+                BuzzError();
+}
+#else //CH32
+
+#include "ch32v003fun.h"
+#include "ch32.h"
+#include "utils.h"
+extern "C" {
+    #include "evse.h"
+}
+
+
+// ############################# OneWire functions #############################
+
+// SW set to 0, set to output (driven low)
+void ONEWIRE_LOW(void)
+{
+    funDigitalWrite(SW_IN, FUN_LOW);
+    funPinMode(SW_IN, GPIO_CFGLR_OUT_2Mhz_PP);
+}
+
+// SW set to 1, set to output (driven high)
+void ONEWIRE_HIGH(void)
+{
+    funDigitalWrite(SW_IN, FUN_HIGH);
+    funPinMode(SW_IN, GPIO_CFGLR_OUT_2Mhz_PP);
+}
+
+// SW input (floating high)
+void ONEWIRE_FLOATHIGH(void)
+{
+    GPIOB->BSHR = 0x0020;           // Set OUTDR bit 5 -> enabling Pull up (might be able to do the same with funDigitalWrite)
+    funPinMode(SW_IN, GPIO_CFGLR_IN_PUPD);
+}
+
+
+// Reset 1-Wire device on SW input
+// returns:  1 Device found
+//           0 No device found
+//         255 Error. Line is pulled low (short, or external button pressed?)
+//
+uint8_t OneWireReset(void) {
+    unsigned char r;
+
+    if (funDigitalRead(SW_IN) == FUN_LOW) return 255;                 // Error, pulled low by external device?
+
+    ONEWIRE_LOW();                                                // Drive wire low
+    delayMicroseconds(480);
+    ONEWIRE_FLOATHIGH();                                          // don't drive high, but use pullup
+    delayMicroseconds(70);
+
+    if (funDigitalRead(SW_IN) == FUN_HIGH) r = 0;                     // sample pin to see if there is a OneWire device..
+    else r = 1;
+
+    delayMicroseconds(410);
+    return r;
+}
+
+void OneWireWriteBit(uint8_t v) {
+
+    if (v & 1) {                                                  // write a '1'
+        ONEWIRE_LOW();                                            // Drive low
+        delayMicroseconds(10);
+        ONEWIRE_HIGH();                                           // Drive high
+        delayMicroseconds(55);
+    } else {                                                      // write a '0'
+        ONEWIRE_LOW();                                            // Drive low
+        delayMicroseconds(65);
+        ONEWIRE_HIGH();                                           // Drive high
+        delayMicroseconds(5);
     }
 }
+
+uint8_t OneWireReadBit(void) {
+    unsigned char r;
+
+    ONEWIRE_LOW();
+    delayMicroseconds(3);
+    ONEWIRE_FLOATHIGH();
+    delayMicroseconds(10);
+
+    if (funDigitalRead(SW_IN) == FUN_HIGH) r = 1u;                    // sample pin
+    else r = 0;
+
+    delayMicroseconds(53);
+    return r;
+}
+
+void OneWireWrite(uint8_t v) {
+    unsigned char bitmask;
+    for (bitmask = 0x01; bitmask ; bitmask <<= 1) {
+        OneWireWriteBit( (bitmask & v) ? 1u : 0);
+    }
+}
+
+uint8_t OneWireRead(void) {
+    unsigned char bitmask, r = 0;
+
+    for (bitmask = 0x01; bitmask ; bitmask <<= 1) {
+        if ( OneWireReadBit()) r |= bitmask;
+    }
+    return r;
+}
+
+uint8_t OneWireReadCardId() {
+    unsigned char x;
+
+    if (OneWireReset() == 1) {                                    // RFID card detected
+        OneWireWrite(0x33);                                       // OneWire ReadRom Command
+        for (x=0 ; x<8 ; x++) RFID[x] = OneWireRead();            // read Family code (0x01) RFID ID (6 bytes) and crc8
+
+        if (crc8(RFID,8)) {
+            RFID[0] = 0;                                          // CRC incorrect, clear first byte of RFID buffer
+            printf("@RFIDstatus:0\n");                             // signal RFIDstatus = 0
+            return 0;
+        } else {
+            printf("@RFID:");
+            for (x=0 ; x<8 ; x++) printf("%02x",RFID[x]);
+            printf("\n");
+            return 1;
+        }
+    }
+    printf("@RFIDstatus:0\n");                                    // signal RFIDstatus = 0
+    return 0;
+}
+#endif

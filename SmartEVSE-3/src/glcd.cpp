@@ -21,25 +21,22 @@
 ; OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ; THE SOFTWARE.
  */
+#ifdef SMARTEVSE_VERSION //ESP32
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <SPI.h>
 #include <WiFi.h>
-#include "main.h"
+#include "esp32.h"
 #include "glcd.h"
 #include "utils.h"
 #include "meter.h"
 #include "font.cpp"
 #include "font2.cpp"
 
-#if ENABLE_OCPP
+#if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
 #include <MicroOcpp.h>
 #endif
-
-#if SMARTEVSE_VERSION == 4
-#include "Melopero_RV3028.h"
-#endif //SMARTEVSE_VERSION
 
 const unsigned char LCD_Flow [] = {
 0x00, 0x00, 0x98, 0xCC, 0x66, 0x22, 0x22, 0x22, 0xF2, 0xAA, 0x26, 0x2A, 0xF2, 0x22, 0x22, 0x22,
@@ -80,15 +77,23 @@ uint8_t LCDpos = 0;
 bool LCDToggle = false;                                                         // Toggle display between two values
 unsigned char LCDText = 0;                                                      // Cycle through text messages
 unsigned int GLCDx, GLCDy;
-uint8_t GLCDbuf[512];                                                       // GLCD buffer (half of the display)
+uint8_t GLCDbuf[512];                                                           // GLCD buffer (half of the display)
+uint8_t GLCDbuf2[1024];                                                         // Buffer that mirrors the complete LCD.    
 tm DelayedStartTimeTM;
 time_t DelayedStartTime_Old;
 uint8_t MenuItems[MENU_EXIT];
-extern void CheckSwitch(bool force = false);
-extern void handleWIFImode(void *s  = &Serial);
-extern char SmartConfigKey[16];
+uint8_t GridActive = 0;                                                         // When the CT's are used on Sensorbox2, it enables the GRID menu option.
+uint32_t ScrollTimer = 0;
 
-#if SMARTEVSE_VERSION == 3
+extern void CheckSwitch(bool force = false);
+extern void handleWIFImode(void);
+extern Button ExtSwitch;
+extern String APpassword;
+unsigned char activeRow;
+extern Switch_Phase_t Switching_Phases_C2;
+extern uint8_t RCMTestCounter;
+
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
 
 void st7565_command(unsigned char data) {
     _A0_0;
@@ -100,27 +105,18 @@ void st7565_data(unsigned char data) {
     SPI.transfer(data);
 }
 #else //SMARTEVSE_VERSION
-extern Melopero_RV3028 rtc;
-extern struct rtcTime rtcTS;
 
 void st7565_command(unsigned char data) {
-    LCD_A0_0;
+    _A0_0;
     digitalWrite(LCD_CS, LOW);
     LCD_SPI2.transfer(data);
     digitalWrite(LCD_CS, HIGH);
 }
 
 void st7565_data(unsigned char data) {
-    LCD_A0_1;
+    _A0_1;
     digitalWrite(LCD_CS, LOW);
     LCD_SPI2.transfer(data);
-    digitalWrite(LCD_CS, HIGH);
-}
-
-void st7565_data_buf(unsigned char *data, unsigned char len) {
-    LCD_A0_1;
-    digitalWrite(LCD_CS, LOW);
-    LCD_SPI2.transfer(data, len);
     digitalWrite(LCD_CS, HIGH);
 }
 #endif //SMARTEVSE_VERSION
@@ -129,6 +125,7 @@ void goto_row(unsigned char y) {
     unsigned char pattern;
     pattern = 0xB0 | (y & 0xBF);                                                // put row address on data port set command
     st7565_command(pattern);
+    activeRow = y;
 }
 //--------------------
 
@@ -151,6 +148,8 @@ void glcd_clrln(unsigned char ln, unsigned char data) {
     goto_xy(0, ln);
     for (i = 0; i < 128; i++) {
         st7565_data(data);                                                      // put data on data port
+        // Also update the buffer that mirrors the LCD.
+        GLCDbuf2[i + activeRow * 128] = data;
     }
 }
 
@@ -177,28 +176,20 @@ void GLCD_buffer_clr(void) {
     } while (x != 0);
 }
 
-#if SMARTEVSE_VERSION == 3
 void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
     unsigned char i, y = 0;
     unsigned int x = 0;
 
     do {
         goto_xy(0, RowAdr + y);
-        for (i = 0; i < 128; i++) st7565_data(GLCDbuf[x++]);                    // put data on data port
+        // Sends one chunk of 8 pixels height and 128 pixels wide.
+        for (i = 0; i < 128; i++) {
+            const uint8_t data = GLCDbuf[x++];
+            st7565_data(data);                                              // put data on data port
+            GLCDbuf2[i + activeRow * 128] = data;                           // Also update buffer copy
+        }
     } while (++y < Rows);
 }
-#else
-void GLCD_sendbuf(unsigned char RowAdr, unsigned char Rows) {
-    unsigned char y = 0;
-    unsigned int x = 0;
-
-    do {
-        goto_xy(0, RowAdr + y);
-        st7565_data_buf(GLCDbuf + x, 128);                                  // put data on data port
-        x += 128;
-    } while (++y < Rows);
-}
-#endif //SMARTEVSE_VERSION
 
 void GLCD_font_condense(unsigned char c, unsigned char *start, unsigned char *end, unsigned char space) {
     if(c >= '0' && c <= '9') return;
@@ -357,12 +348,6 @@ void GLCD_write_buf_str2(const char *str, unsigned char Options) {
     }
 }
 
-void GLCD_print_buf(unsigned char y, const char *str) {
-    GLCD_buffer_clr();                                                          // Clear buffer
-    GLCD_write_buf_str(0, y, str, GLCD_ALIGN_LEFT);
-    GLCD_sendbuf(y, 1);                                                         // copy buffer to LCD
-}
-
 // uses buffer
 void GLCD_print_buf2_left(const char *data) {
     GLCD_buffer_clr();                                                          // Clear buffer
@@ -376,6 +361,7 @@ void GLCD_print_buf2(unsigned char y, const char* str) {
     GLCD_sendbuf(y, 2);                                                        // copy buffer to LCD
 }
 
+static uint8_t cursor = 0;
 // Write Menu to buffer, then send to GLCD
 void GLCD_print_menu(unsigned char y, const char* str) {
     GLCD_buffer_clr();                                                          // Clear buffer
@@ -384,6 +370,10 @@ void GLCD_print_menu(unsigned char y, const char* str) {
     if ((SubMenu && y == 4) || (!SubMenu && y == 2)) {                          // navigation arrows
         GLCDx = 0;
         GLCD_write_buf2('<');
+        if (cursor != 0) {
+            GLCDx = cursor;
+            GLCD_write_buf2('>');
+        }
         GLCDx = 10 * 12;                                                        // last character of line
         GLCD_write_buf2('>');
     }
@@ -436,9 +426,8 @@ unsigned char MenuNavCharArray(unsigned char Buttons, unsigned char Value, unsig
 // uses buffer
 void GLCDHelp(void)                                                             // Display/Scroll helptext on LCD 
 {
-    unsigned int x;
-
-    x = strlen(MenuStr[LCDNav].Desc);
+  if (ScrollTimer + 5000 < millis()) {
+    unsigned int x = strlen(MenuStr[LCDNav].Desc);
     GLCD_print_buf2_left(MenuStr[LCDNav].Desc + LCDpos);
 
     if (LCDpos++ == 0) ScrollTimer = millis() - 4000;
@@ -446,6 +435,7 @@ void GLCDHelp(void)                                                             
         ScrollTimer = millis() - 3000;
         LCDpos = 0;
     } else ScrollTimer = millis() - 4700;
+  }
 }
 
 
@@ -456,18 +446,17 @@ void GLCD(void) {
     static unsigned char energy_mains = 20; // X position
     static unsigned char energy_ev = 74; // X position
     char Str[26];
-
     LCDTimer++;
     
     if (LCDNav) {
         GLCD_buffer_clr();
         // top line
         if (LCDNav == MENU_RFIDREADER && SubMenu) {
-            if (RFIDstatus == 2) GLCD_print_buf(0, (const char*) "Card Stored");
-            else if (RFIDstatus == 3) GLCD_print_buf(0, (const char*) "Card Deleted");
-            else if (RFIDstatus == 4) GLCD_print_buf(0, (const char*) "Card already stored!");
-            else if (RFIDstatus == 5) GLCD_print_buf(0, (const char*) "Card not in storage!");
-            else if (RFIDstatus == 6) GLCD_print_buf(0, (const char*) "Card storage full!");
+            if (RFIDstatus == 2) GLCD_write_buf_str(0, 0, "Card Stored", GLCD_ALIGN_LEFT);
+            else if (RFIDstatus == 3) GLCD_write_buf_str(0, 0, "Card Deleted", GLCD_ALIGN_LEFT);
+            else if (RFIDstatus == 4) GLCD_write_buf_str(0, 0, "Card already stored!", GLCD_ALIGN_LEFT);
+            else if (RFIDstatus == 5) GLCD_write_buf_str(0, 0, "Card not in storage!", GLCD_ALIGN_LEFT);
+            else if (RFIDstatus == 6) GLCD_write_buf_str(0, 0, "Card storage full!", GLCD_ALIGN_LEFT);
             else glcd_clrln(0, 0x00);                                           // Clear line
             LCDTimer = 0;                                                       // reset timer, so it will not exit the menu when learning/deleting cards
         // Sensorbox 2 WiFi settings
@@ -511,19 +500,17 @@ void GLCD(void) {
                     GLCD_write_buf_str(127,0, Str, GLCD_ALIGN_RIGHT);
                 } else GLCD_write_buf_str(0,0, "Not connected to WiFi", GLCD_ALIGN_LEFT);
 
-            // When Wifi Setup is selected, show AES key for the ESPTouch app
+            // When Wifi Setup is selected, show password and SSID of the Access Point
             } else if (WIFImode == 2) {
                 if (SubMenu && WiFi.getMode() != WIFI_AP_STA) {           // Do not show if AP_STA mode is started
-                    sprintf(Str, "O button starts config");
+                    sprintf(Str, "O button starts portal");
                     GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 } else {
-                    // Show ESPTouch key
-                    sprintf(Str, "Key:%s", SmartConfigKey);
-                    GLCD_write_buf_str(0, 0, Str, GLCD_ALIGN_LEFT);
-                    GLCD_sendbuf(7, 1);
-                    GLCD_buffer_clr();
-                    sprintf(Str, "Now use EspTouch app ");
-                    GLCD_write_buf_str(0, 0, Str, GLCD_ALIGN_LEFT);
+                    // Show Access Point password
+                    //sprintf(Str, "AP:SmartEVSE-config");
+                    //GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
+                    sprintf(Str, "Portal PW:%s", APpassword.c_str());
+                    GLCD_write_buf_str(0,0, Str, GLCD_ALIGN_LEFT);
                 }
             }
         }
@@ -548,14 +535,16 @@ void GLCD(void) {
         BacklightTimer = BACKLIGHT;                                             // Backlight timer is set to 120 seconds
 
         if (ErrorFlags & (CT_NOCOMM | EV_NOCOMM)) {                             // No serial communication for 10 seconds
-            
             if (ErrorFlags & EV_NOCOMM) {
                 GLCD_print_buf2(0, (const char *) "CAN'T READ");
                 GLCD_print_buf2(2, (const char *) "EV METER");
+            } else if (MainsMeter.Type == EM_API || MainsMeter.Type == EM_HOMEWIZARD_P1) {
+                GLCD_print_buf2(0, (const char *) "CAN'T READ");
+                GLCD_print_buf2(2, (const char *) "MAINS METER");
             } else {
                 GLCD_print_buf2(0, (const char *) "ERROR NO");
                 GLCD_print_buf2(2, (const char *) "SERIAL COM");
-            }            
+            }           
             GLCD_print_buf2(4, (const char *) "CHECK CFG");
             GLCD_print_buf2(6, (const char *) "OR WIRING");
             return;
@@ -565,7 +554,7 @@ void GLCD(void) {
             GLCD_print_buf2(4, (const char *) "CHARGING");
             GLCD_print_buf2(6, (const char *) "STOPPED");
             return;
-        } else if (ErrorFlags & RCM_TRIPPED) {                                  // Residual Current Sensor tripped
+        } else if ((ErrorFlags & RCM_TRIPPED) && !(ErrorFlags & RCM_TEST)) {    // Residual Current Sensor tripped
             if (!LCDToggle) {
                 GLCD_print_buf2(0, (const char *) "RESIDUAL");
                 GLCD_print_buf2(2, (const char *) "FAULT");
@@ -578,6 +567,21 @@ void GLCD(void) {
                 GLCD_print_buf2(6, (const char *) "RESET");
             }
             return;
+#if SMARTEVSE_VERSION >= 40
+        } else if (!(ErrorFlags & RCM_TRIPPED) && (ErrorFlags & RCM_TEST) && !RCMTestCounter) {    // Residual Current Sensor test failed
+            if (!LCDToggle) {
+                GLCD_print_buf2(0, (const char *) "RESIDUAL");
+                GLCD_print_buf2(2, (const char *) "SENSOR");
+                GLCD_print_buf2(4, (const char *) "TEST");
+                GLCD_print_buf2(6, (const char *) "FAILED");
+            } else {
+                GLCD_print_buf2(0, (const char *) "REBOOT");
+                GLCD_print_buf2(2, (const char *) "TO");
+                GLCD_print_buf2(4, (const char *) "RESET");
+                GLCD_print_buf2(6, (const char *) "");
+            }
+            return;
+#endif
         } else if (ErrorFlags & Test_IO) {                                      // Only used when testing the module
             GLCD_print_buf2(2, (const char *) "IO Test");
             sprintf(Str, "FAILED! %u", TestState);
@@ -597,14 +601,14 @@ void GLCD(void) {
     }
 
                                                                                 // MODE NORMAL
-    if (Mode == MODE_NORMAL || !Access_bit) {
+    if (Mode == MODE_NORMAL || AccessStatus == OFF) {
 
         glcd_clrln(0, 0x00);
         glcd_clrln(1, 0x04);                                                    // horizontal line
         glcd_clrln(6, 0x10);                                                    // horizontal line
         glcd_clrln(7, 0x00);
 
-#if ENABLE_OCPP
+#if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
         if (OcppMode &&                                          // OCPP enabled
                 (getItemValue(MENU_RFIDREADER) == 6 || getItemValue(MENU_RFIDREADER) == 0) && // RFID in OCPP mode or disabled
                 ocppHasTxNotification()) {                                      // There is an OCPP event to display
@@ -650,7 +654,7 @@ void GLCD(void) {
             }
         } else
 #endif //ENABLE_OCPP
-        if (ErrorFlags & LESS_6A) {
+        if (ErrorFlags & LESS_6A && AccessStatus == ON) {
             GLCD_print_buf2(2, (const char *) "WAITING");
             GLCD_print_buf2(4, (const char *) "FOR POWER");
 #if MODEM
@@ -678,15 +682,17 @@ void GLCD(void) {
             sprintf(Str, "%u.%uA",Balanced[0] / 10, Balanced[0] % 10);
             GLCD_print_buf2(4, Str);
         } else {                                                                // STATE A and STATE B
-            if (Access_bit) {
+            if (AccessStatus == ON) {
                 GLCD_print_buf2(2, (const char *) "READY TO");
                 sprintf(Str, "CHARGE %u", ChargeDelay);
                 if (ChargeDelay) {
                     // BacklightTimer = BACKLIGHT;
                 } else Str[6] = '\0';
                 GLCD_print_buf2(4, Str);
+            } else if (AccessStatus == PAUSE) {
+                GLCD_print_buf2(2, (const char *) "PAUSE");
             } else {
-#if ENABLE_OCPP
+#if ENABLE_OCPP && defined(SMARTEVSE_VERSION) //run OCPP only on ESP32
                 if (OcppMode &&                                  // OCPP enabled
                         (getItemValue(MENU_RFIDREADER) == 6 || getItemValue(MENU_RFIDREADER) == 0)) { // RFID in OCPP mode or disabled
                     switch (getChargePointStatus()) {
@@ -766,7 +772,7 @@ void GLCD(void) {
                             time_t epoch = DelayedStartTime.epoch2 + EPOCH2_OFFSET;
                             DelayedStartTimeTM = *localtime(&epoch);
                         }
-                        if (!strftime(Str, 26, StrFormat.c_str(), &DelayedStartTimeTM))
+                        if (!strftime(Str, sizeof(Str), StrFormat.c_str(), &DelayedStartTimeTM))
                             sprintf(Str, "later...");
                         GLCD_print_buf2(4, Str);
                         //print current time
@@ -875,25 +881,33 @@ void GLCD(void) {
         if (ErrorFlags & LESS_6A) {
             if (!LCDToggle) {
                 GLCD_print_buf2(5, (const char *) "WAITING");
-            } else GLCD_print_buf2(5, (const char *) "FOR POWER");
-        } else if (ErrorFlags & NO_SUN) {
-            if (!LCDToggle) {
-                GLCD_print_buf2(5, (const char *) "WAITING");
-            } else GLCD_print_buf2(5, (const char *) "FOR SOLAR");
+            } else {
+                if (Mode == MODE_SMART) {
+                    GLCD_print_buf2(5, (const char *) "FOR POWER");
+                } else {
+                    GLCD_print_buf2(5, (const char *) "FOR SOLAR");
+                }
+            }
+
 #if MODEM
         } else if (State == STATE_MODEM_REQUEST || State == STATE_MODEM_WAIT || State == STATE_MODEM_DONE) {                                          // Modem states
             GLCD_print_buf2(5, (const char *) "MODEM");
 #endif
+        } else if (AccessStatus == PAUSE) {
+                    GLCD_print_buf2(5, "PAUSE");
         } else if (State != STATE_C) {
-                switch (Switching_To_Single_Phase) {
-                    case FALSE:
-                    case AFTER_SWITCH:
+                switch (Switching_Phases_C2) {
+                    case NO_SWITCH:
                         sprintf(Str, "READY %u", ChargeDelay);
                         if (!ChargeDelay) Str[5] = '\0';
                         break;
-                    case GOING_TO_SWITCH:
-                        sprintf(Str, "3F -> 1F %u", ChargeDelay);
-                        if (!ChargeDelay) Str[7] = '\0';
+                    case GOING_TO_SWITCH_1P:
+                        sprintf(Str, "3P -> 1P %u", ChargeDelay);
+                        if (!ChargeDelay) Str[8] = '\0';
+                        break;
+                    case GOING_TO_SWITCH_3P:
+                        sprintf(Str, "1P -> 3P %u", ChargeDelay);
+                        if (!ChargeDelay) Str[8] = '\0';
                         break;
                 }
                 GLCD_print_buf2(5, Str);
@@ -904,9 +918,7 @@ void GLCD(void) {
                     if (Mode != MODE_NORMAL) {
                         if (Mode == MODE_SOLAR) sprintf(Str, "SOLAR");
                             else sprintf(Str, "SMART");
-                        if (Nr_Of_Phases_Charging != 0) {
-                            sprintf(Str+5," %uF", Nr_Of_Phases_Charging);
-                        }
+                            sprintf(Str+5," %uP", Nr_Of_Phases_Charging);
                         GLCD_print_buf2(5, Str);
                         break;
                     } else LCDText++;
@@ -969,7 +981,7 @@ const char * getMenuItemOption(uint8_t nav) {
     const static char StrGrid[2][10] = {"4Wire", "3Wire"};
     const static char StrEnabled[] = "Enabled";
     const static char StrExitMenu[] = "MENU";
-    const static char StrRFIDReader[7][10] = {"Disabled", "EnableAll", "EnableOne", "Learn", "Delete", "DeleteAll", "Rmt/OCPP"};
+    extern const char StrRFIDReader[7][10];
     const static char StrWiFi[3][10] = {"Disabled", "Enabled", "SetupWifi"};
 
     unsigned int value = getItemValue(nav);
@@ -1026,6 +1038,9 @@ const char * getMenuItemOption(uint8_t nav) {
             return (const char*)EMConfig[value].Desc;
         case MENU_GRID:
             return StrGrid[value];
+        case MENU_LCDPIN:
+            sprintf(Str, "%04u", value);
+            return Str;
         case MENU_MAINSMETERADDRESS:
         case MENU_EVMETERADDRESS:
         case MENU_EMCUSTOM_UREGISTER:
@@ -1098,7 +1113,7 @@ uint8_t getMenuItems (void) {
                 if (SB2.SoftwareVer == 0x01) {
                     MenuItems[m++] = MENU_SB2_WIFI;                             // Sensorbox-2 Wifi  0:Disabled / 1:Enabled / 2:Portal
                 }
-            } else if (MainsMeter.Type && MainsMeter.Type != EM_API) {          // - - ? Other?
+            } else if (MainsMeter.Type && MainsMeter.Type != EM_API && MainsMeter.Type != EM_HOMEWIZARD_P1) { // - - ? Other?
                 MenuItems[m++] = MENU_MAINSMETERADDRESS;                        // - - - Address of Mains electric meter (9 - 247)
             }
         }
@@ -1136,8 +1151,9 @@ uint8_t getMenuItems (void) {
         MenuItems[m++] = MENU_START;                                            // - Start Surplus Current (A)
         MenuItems[m++] = MENU_STOP;                                             // - Stop time (min)
         MenuItems[m++] = MENU_IMPORT;                                           // - Import Current from Grid (A)
-        MenuItems[m++] = MENU_C2;
     }
+    if (Mode != MODE_NORMAL)
+        MenuItems[m++] = MENU_C2;
     MenuItems[m++] = MENU_SWITCH;                                               // External Switch on SW (0:Disable / 1:Access / 2:Smart-Solar)
     MenuItems[m++] = MENU_RCMON;                                                // Residual Current Monitor on RCM (0:Disable / 1:Enable)
     MenuItems[m++] = MENU_RFIDREADER;                                           // RFID Reader connected to SW (0:Disable / 1:Enable / 2:Learn / 3:Delete / 4:Delate All)
@@ -1151,6 +1167,7 @@ uint8_t getMenuItems (void) {
         if (getItemValue(MENU_SUMMAINS) != 0)
             MenuItems[m++] = MENU_SUMMAINSTIME;
     }
+    MenuItems[m++] = MENU_LCDPIN;
     MenuItems[m++] = MENU_EXIT;
 
     return m;
@@ -1176,14 +1193,6 @@ void GLCDMenu(uint8_t Buttons) {
     // Main Menu Navigation
     BacklightTimer = BACKLIGHT;                                                 // delay before LCD backlight turns off.
 
-    // Disable buttons when access switch is configured and access is denied
-    if ((getItemValue(MENU_SWITCH) == 1 || getItemValue(MENU_SWITCH) == 2) && Access_bit == 0 && LCDNav == 0)
-        return;
-
-    if (getItemValue(MENU_RCMON) == 1 && (ErrorFlags & RCM_TRIPPED) && RCMFAULT == LOW) {          // RCM was tripped, but RCM level is back to normal
-        ErrorFlags &= ~RCM_TRIPPED;                                             // Clear RCM error bit, by pressing any button
-    }
-
     if ((LCDNav == 0) && (Buttons == 0x5) && (ButtonRelease == 0)) {            // Button 2 pressed ?
         LCDNav = MENU_ENTER;                                                    // about to enter menu
         ButtonTimer = millis();
@@ -1200,7 +1209,7 @@ void GLCDMenu(uint8_t Buttons) {
         ButtonTimer = millis();
     } else if (LCDNav == MENU_OFF && ((ButtonTimer + 2000) < millis() )) {
         LCDNav = 0;                                                             // Charging canceled
-        setAccess(false);
+        setAccess(OFF);
         ButtonRelease = 1;
     } else if ((LCDNav == MENU_OFF) && (Buttons == 0x7)) {                      // Button 1 released before entering menu?
         //if < button is pressed shorter then 2 seconds we are switching from Smart mode to Solar mode and vice versa
@@ -1210,12 +1219,12 @@ void GLCDMenu(uint8_t Buttons) {
         ButtonRelease = 0;
         GLCD();
     // start charging if > button is pressed longer then 2 seconds
-    } else if ((Access_bit == 0) && (LCDNav == 0) && (Buttons == 0x3) && (ButtonRelease == 0)) {     // Button 3 pressed ?
+    } else if ((AccessStatus == OFF) && (LCDNav == 0) && (Buttons == 0x3) && (ButtonRelease == 0)) {     // Button 3 pressed ?
         LCDNav = MENU_ON;                                                       // about to start charging
         ButtonTimer = millis();
     } else if (LCDNav == MENU_ON && ((ButtonTimer + 2000) < millis() )) {
         LCDNav = 0;                                                             // Charging canceled
-        setAccess(true);
+        setAccess(ON);
         ButtonRelease = 1;
     } else if ((LCDNav == MENU_ON) && (Buttons == 0x7)) {                      // Button 1 released before entering menu?
         LCDNav = 0;
@@ -1233,13 +1242,13 @@ void GLCDMenu(uint8_t Buttons) {
                     case MENU_MAINSMETER:
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
-                        } while (value >= EM_UNUSED_SLOT1 && value <= EM_UNUSED_SLOT4);
+                        } while (value >= EM_UNUSED_SLOT3 && value <= EM_UNUSED_SLOT4);
                         setItemValue(LCDNav, value);
                         break;
-                    case MENU_EVMETER:                                          // do not display the Sensorbox or unused slots here
+                    case MENU_EVMETER:                                          // do not display the Sensorbox, HomeWizard P1 or unused slots here
                         do {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
-                        } while (value == EM_SENSORBOX || (value >= EM_UNUSED_SLOT1 && value <= EM_UNUSED_SLOT4));
+                        } while (value == EM_SENSORBOX || value == EM_HOMEWIZARD_P1 || (value >= EM_UNUSED_SLOT3 && value <= EM_UNUSED_SLOT4));
                         setItemValue(LCDNav, value);
                         break;
                     case MENU_WIFI:
@@ -1259,10 +1268,34 @@ void GLCDMenu(uint8_t Buttons) {
                             value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
                         } while (LoadBl >=2 && value == 5);                     // do not allow GridRelay on Slave
                         setItemValue(LCDNav, value);
-                        if (value == 5)
-                            CheckSwitch(true);
-                        else
+                        if (value != 5)
                             GridRelayOpen = false;                              // so we don't have limiting current when not on GridRelay
+                        //on Toggle switches we want to read the existing switch position, so we re-call the constructor:
+                        ExtSwitch = Button();                                   //this recreates ExtSwitch object, thus calling the constructor
+                        break;
+                    case MENU_LCDPIN: //left button changes digit, middle button goes out of menu, right button moves to next digit
+                        static int8_t digit = 3;
+                        static uint8_t digits[4]; //numbered 3,2,
+                        /// pin 0478 is digit 3210 so digit[3]=0, digit[2]=4 etc
+                        if (Buttons == 0x3) digit--;                            //right button pressed
+                        if (digit < 0) digit = 3;
+                        cursor = 68 - 13 * digit;
+                        if (Buttons == 0x5)
+                            cursor = 0;                                         //middle key pressed, clear cursor
+                        digits[digit]= (uint16_t)(value/pow_10[digit]) % 10;
+                        value -= digits[digit]*pow_10[digit];                   //we subtract the old digit's value
+                        if (Buttons == 0x6) {                                   //left button pressed
+                            digits[digit]++;
+                            if (digits[digit]>9) digits[digit]=0;
+                        }
+                        value += digits[digit]*pow_10[digit];                   //we add the new digit's value
+                        setItemValue(LCDNav, value);
+                      break;
+                    case MENU_C2:                                               // do not display AUTO when slave
+                        do {
+                            value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
+                        } while (LoadBl >=2 && value == AUTO);
+                        setItemValue(LCDNav, value);
                         break;
                     default:
                         value = MenuNavInt(Buttons, value, MenuStr[LCDNav].Min, MenuStr[LCDNav].Max);
@@ -1288,6 +1321,7 @@ void GLCDMenu(uint8_t Buttons) {
         ButtonRelease = 1;
         if (SubMenu) {                                                          // We are currently in Submenu
             SubMenu = 0;                                                        // Exit Submenu now
+            cursor = 0;
             uint8_t WIFImode = getItemValue(MENU_WIFI);
             if (LCDNav == MENU_WIFI && WIFImode == 2)
                 handleWIFImode();
@@ -1296,13 +1330,16 @@ void GLCDMenu(uint8_t Buttons) {
             if (LCDNav == MENU_EXIT) {                                          // Exit Main Menu
                 LCDNav = 0;
                 SubMenu = 0;
-                ErrorFlags = NO_ERROR;                                          // Clear All Errors when exiting the Main Menu
+                clearErrorFlags(!(NO_ERROR));                                           // Clear All Errors when exiting the Main Menu
                 TestState = 0;                                                  // Clear TestState
-                ChargeDelay = 0;                                                // Clear ChargeDelay
+                setChargeDelay(0);                                              // Clear ChargeDelay
                 setSolarStopTimer(0);                                           // Disable Solar Timer
                 GLCD();
                 write_settings();                                               // Write to eeprom
                 ButtonRelease = 2;                                              // Skip updating of the LCD 
+            }
+            if (LCDNav == MENU_LCDPIN) {
+                cursor = 68 - 13 * 3;                                           // print initial cursor when entering submenu
             }
         }
 
@@ -1362,14 +1399,15 @@ void GLCDMenu(uint8_t Buttons) {
 
 
 void GLCD_init(void) {
-#if SMARTEVSE_VERSION == 3
+#if SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40
     delay(200);                                                                 // transients on the line could have garbled the LCD, wait 200ms then re-init.
+#endif
     _A0_0;                                                                      // A0=0
     _RSTB_0;                                                                    // Reset GLCD module
     delayMicroseconds(4);
     _RSTB_1;                                                                    // Reset line high
     delayMicroseconds(4);
-    
+
     st7565_command(0xA2);                                                       // (11) set bias at duty cycle 1.65 (0xA2=1.9 0xA3=1.6)
     st7565_command(0xA0);                                                       // (8) SEG direction (0xA0 or 0xA1)
     st7565_command(0xC8);                                                       // (15) comm direction normal =0xC0 comm reverse= 0xC8
@@ -1392,36 +1430,7 @@ void GLCD_init(void) {
     goto_col(0x00);                                                             // (4) Set column addr LSB
  
     st7565_command(0xAF);                                                       // (1) ON command
-#else //SMARTEVSE_VERSION
-    LCD_A0_0;                                                                   // A0=0
-    LCD_RST_0;                                                                 // Reset GLCD module
-    delayMicroseconds(4);
-    LCD_RST_1;                                                                 // Reset line high
-    delayMicroseconds(4);
-
-    st7565_command(0xA2);                                                       // (11) set bias at duty cycle 1.65 (0xA2=1.9 0xA3=1.6)
-    st7565_command(0xA0);                                                       // (8) SEG direction (0xA0 or 0xA1)
-    st7565_command(0xC8);                                                       // (15) comm direction normal =0xC0 comm reverse= 0xC8
-
-    st7565_command(0x20 | 0x04);                                                // (17) set Regulation Ratio (0-7)
-
-    st7565_command(0xF8);                                                       // (19) send Booster command
-    st7565_command(0x01);                                                       // set Booster value 00=4x 01=5x
-
-    st7565_command(0x81);                                                       // (18) send Electronic Volume command 0x81
-    st7565_command(0x24);                                                       // set Electronic volume (0x00-0x3f)
-
-    st7565_command(0xA6);                                                       // (9) Inverse display (0xA7=inverse 0xA6=normal)
-    st7565_command(0xA4);                                                       // (10) ALL pixel on (A4=normal, A5=all ON)
-
-    st7565_command(0x28 | 0x07);                                                // (16) ALL Power Control ON
-
-    glcd_clear();                                                               // clear internal GLCD buffer
-    goto_row(0x00);                                                             // (3) Set page address
-    goto_col(0x00);                                                             // (4) Set column addr LSB
-
-    st7565_command(0xAF);                                                       // (1) ON command
-
+#if SMARTEVSE_VERSION >= 40
     glcd_clrln(0, 0x00);
     glcd_clrln(1, 0x04);                                                // horizontal line
     GLCD_print_buf2(2, (const char *) "SmartEVSE 4");
@@ -1431,3 +1440,114 @@ void GLCD_init(void) {
 #endif
 }
 
+/**
+ * Write header for BMP 1-bit image.
+ *
+ * @param width Width of the BMP image in pixels
+ * @param height Height of the BMP image in pixels
+ */
+std::vector<uint8_t> createBMPHeader(const int width, const int height) {
+    const uint32_t rowSize = (width + 31) / 32 * 4;  // Each row must be a multiple of 4 bytes
+    const uint32_t fileSize = 62 /* header bytes*/ + (rowSize * height / 8);
+
+    std::vector<uint8_t> headerVector(fileSize);
+    headerVector = {
+        'B', 'M',                     // 'BM' Signature
+        static_cast<uint8_t>(fileSize & 0xFF),      // Byte 1 (Least Significant Byte)
+        static_cast<uint8_t>(fileSize >> 8 & 0xFF), // Byte 2
+        0x00,                         // Byte 3
+        0x00,                         // Byte 4 (Most Significant Byte)
+        0x00, 0x00, 0x00, 0x00,       // Reserved
+        0x3E, 0x00, 0x00, 0x00,       // Data offset - Header (14) + DIB (40) + Palette (8) 
+
+        40, 0, 0, 0,                  // DIB header size 
+        static_cast<uint8_t>(width), 0, 0, 0,       // Width (max 255)
+        static_cast<uint8_t>(height), 0, 0, 0,      // Height (max 255)
+        1, 0,                         // Planes
+        1, 0,                         // Bits per pixel (1-bit monochrome)
+        0, 0, 0, 0,                   // No compression
+        0, 0, 0, 0,                   // Image size (can be 0 for uncompressed)
+        0, 0, 0, 0,                   // X pixels per meter (unused)
+        0, 0, 0, 0,                   // Y pixels per meter (unused)
+        2, 0, 0, 0,                   // Number of colors in the palette (black & white)
+        0, 0, 0, 0,                   // Important colors
+        
+        // Write color palette
+        0xFF, 0xFF, 0xFF, 0x00,       // White (0)
+        0x00, 0x00, 0xFF, 0x00,       // Red (1)
+    };
+    return headerVector;
+}
+
+/**
+ * Transposes a 8x8 bit matrix stored in a byte array.
+ *
+ * This function takes an 8-byte input, where each byte represents a row of 8 bits,
+ * and transposes it so that each output byte represents a column of 8 bits.
+ * This operation is commonly used for graphical displays that store pixel data
+ * in a column-major format.
+ *
+ * @param[in] input  An array of 8 bytes, where each byte represents a row of 8 bits.
+ * @param[out] output An array of 8 bytes, where each byte represents a transposed column of 8 bits.
+ *
+ */
+void transpose8x8(const std::array<uint8_t, 8>& input, std::array<uint8_t, 8>& output) {
+    for (int bitPos = 0; bitPos < 8; ++bitPos) {
+        uint8_t newByte = 0;
+        for (int i = 0; i < 8; ++i) {
+            newByte |= (input[i] >> (7 - bitPos) & 0x01) << (7 - i);
+        }
+        output[bitPos] = newByte;
+    }
+}
+
+/**
+ * Processes GLCD buffer data and converts it into a BMP-formatted image.
+ *
+ * This function takes a graphical LCD (GLCD) buffer, processes it by transposing
+ * 8x8 pixel blocks, and formats the output as a BMP image. The function reads
+ * the buffer in chunks of 128 bytes, rearranges the bits for correct rendering,
+ * and appends the processed data to a BMP header.
+ *
+ * @return A vector of `uint8_t` containing the BMP-formatted image data.
+ */
+std::vector<uint8_t> createImageFromGLCDBuffer() {
+    constexpr int WIDTH = 128;        // Image width in pixels
+    constexpr int HEIGHT = 64;        // Image height in pixels
+    constexpr int CHUNK_SIZE = 128;
+    constexpr int BLOCK_SIZE = 8;
+
+    // Initialize with BMP header and pre-allocate memory inn the vector.
+    std::vector<uint8_t> imageData = createBMPHeader(WIDTH, HEIGHT);
+
+    for (size_t chunkOffset = sizeof(GLCDbuf2); chunkOffset > 0; chunkOffset -= CHUNK_SIZE) {
+        // Calculate chunk boundaries.
+        const size_t start = chunkOffset >= CHUNK_SIZE ? chunkOffset - CHUNK_SIZE : 0;
+        const size_t end = chunkOffset;
+
+        // Extract chunk.
+        const std::vector<uint8_t> chunk(GLCDbuf2 + start, GLCDbuf2 + end);
+        std::vector<uint8_t> processed(CHUNK_SIZE);
+
+        // Process the 128-byte chunk in groups of 8.
+        for (int byteIndex = 0; byteIndex < CHUNK_SIZE; byteIndex += BLOCK_SIZE) {
+            std::array<uint8_t, BLOCK_SIZE> input{};
+            std::array<uint8_t, BLOCK_SIZE> output{};
+            std::copy_n(chunk.begin() + byteIndex, BLOCK_SIZE, input.begin());
+
+            transpose8x8(input, output);
+
+            // Distribute transposed bytes into the processed buffer
+            const int newByteIndex = byteIndex / BLOCK_SIZE;
+            for (int j = 0; j < BLOCK_SIZE; ++j) {
+                processed[newByteIndex + j * (CHUNK_SIZE / BLOCK_SIZE)] = output[j];
+            }
+        }
+
+        // Append processed chunk to image data.
+        imageData.insert(imageData.end(), processed.begin(), processed.end());
+    }
+    return imageData;
+}
+
+#endif

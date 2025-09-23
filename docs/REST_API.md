@@ -46,6 +46,7 @@ to your curl POST command. -d ''
 <br>&emsp;&emsp;1: NORMAL
 <br>&emsp;&emsp;2: SOLAR
 <br>&emsp;&emsp;3: SMART
+<br>&emsp;&emsp;4: PAUSE
 
 * stop_timer
 
@@ -76,7 +77,7 @@ to your curl POST command. -d ''
 <br>&emsp;&emsp;Note 2: This is just changing the config setting, the contactor will not be controlled immediately but only when there is a
 <br>&emsp;&emsp;state change.
 <br>&emsp;&emsp;
-<br>&emsp;&emsp;If car is charging and you want to change from 1F to 3F or vice versa:
+<br>&emsp;&emsp;If car is charging and you want to change from 1P to 3P or vice versa:
 ```
   - Change mode to OFF
   - Enable or disable C2 contactor
@@ -133,6 +134,26 @@ to your curl POST command. -d ''
 <br>&emsp;&emsp;Usually you should leave this setting at its default value (600A)
 <br>&emsp;&emsp;since your electricity provider probably does not supports this.
 
+* cablelock
+
+&emsp;&emsp;Enhanced cable locking option. This setting makes sure the charging cable stays locked in the charging station, even if no EV is connected anymore.
+
+<br>&emsp;&emsp;Important:
+<br>&emsp;&emsp;This feature only works if a locking device (e.g. Solenoid or Motor) is configured in the LCD menu of the EVSE.
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;Why is this useful?
+<br>&emsp;&emsp;Semi-permanently fixed charging cable: you can attach a charging cable to the charging station, and it will stay locked.
+<br>&emsp;&emsp;Preventing stealing of the cable: some EV's automatically unlock the charging cable when they are finished charging, even if the EV is locked. With this setting, the cable will stay locked on the EVSE side. However, in most EV's, you can set whether the cable should remain locked in the EV itself. But some EV's don't have this option.
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;To activate the enhanced cable lock, set the value to 1. To disable it, set it to 0.
+<br>&emsp;&emsp;
+<br>&emsp;&emsp;Examples:
+<br>&emsp;&emsp;If you want the enhanced cable lock activated, the string to be sent is:
+
+```
+    curl -X POST 'http://ipaddress/settings?cablelock=1 -d ''
+```
+
 # POST: /color_off
 
 * R, G, B
@@ -180,6 +201,15 @@ to your curl POST command. -d ''
 &emsp;&emsp;Actual home battery current multiplied by 10
 <br>&emsp;&emsp;A positive number means the home battery is charging
 <br>&emsp;&emsp;A negative number means the home battery is discharging
+```
+curl -X POST "http://ipaddress/currents?battery_current=300" -d ''
+```
+...means your battery is charging at 10A per phase (3 * 10A = 30A = 300dA).
+
+NOTE: The battery current is ONLY taken into account in SOLAR mode !!!
+
+NOTE: By default the current fed here is divided by three and corrected on every phase.
+If C2 is set to "Always Off", you are signalling a single phase system; in that case the correction is put fully on the L1 phase.
 
 * L1, L2, L3
 

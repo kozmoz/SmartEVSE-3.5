@@ -38,16 +38,16 @@
 ; THE SOFTWARE.
 */
 
-#if SMARTEVSE_VERSION == 4
+#if SMARTEVSE_VERSION >= 40
 
 
 #include <Arduino.h>
-#include <SPIFFS.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "main.h"
+#include "esp32.h"
 #include "wchisp.h"
+#include "mongoose.h"
 
 const uint8_t wch_start[] = {0x31, 0x19, 0x4d, 0x43, 0x55, 0x20, 0x49, 0x53, 0x50, 0x20, 0x26, 0x20, 0x57, 0x43, 0x48, 0x2e ,0x43, 0x4e};
 const uint8_t wch_read_option[] = {0x1f, 0x00};
@@ -60,9 +60,9 @@ uint8_t WchUID[8];
 unsigned long WchTimeout;
 uint8_t WchWaitRX = 0;
 
-File file;
-const char* WCHfirmware = "/CH32V203.bin";
-
+const char* WCHfirmware = "/data/CH32V203.bin";
+extern void glcd_clrln(unsigned char ln, unsigned char data);
+extern void GLCD_print_buf2(unsigned char y, const char* str);
 
 void WchEnterBootloader(void) {
 
@@ -118,19 +118,19 @@ void WchSendData(const uint8_t * command_data, uint16_t len, uint8_t wch_cmd ) {
 }
 
 
-void WchProgram() {
+struct mg_fs *filesystem = &mg_fs_packed;
+
+void WchProgram(void *fp, size_t filesize) {
     uint8_t WchState = WCH_START, RXbyte, RXlen=0, x, sum, XorKey=0;
     uint16_t len;
     uint8_t filebuffer[100];
     uint8_t WchRXbuf[200];
-    uint32_t filesize, filepointer=0;
+    uint32_t filepointer=0;
 
     WchEnterBootloader();
 
-    filesize = file.size();
-
-    log_d("filesize %u bytes", filesize);
-    log_d("Programming CH32V203..");
+    _LOG_D("filesize %u bytes", filesize);
+    _LOG_D("Programming CH32V203..");
     
     while (Serial1.available()) RXbyte = Serial1.read();        // flush Uart
     
@@ -154,8 +154,8 @@ void WchProgram() {
                     break;      
                 case WCH_PROGRAM_FLASH:
                 case WCH_VERIFY_FLASH:
-                    file.seek(filepointer);
-                    len = file.readBytes((char*)filebuffer+5, 56);                      // we read one line at a time
+                    filesystem->sk(fp, filepointer);
+                    len = filesystem->rd(fp, filebuffer+5, 56);                         // we read one line at a time
                     for(x=0; x< len; x++) {
                         if ((x & 7) == 7) filebuffer[x+5] ^= (XorKey + 0x31);           // 8th byte is special
                         else filebuffer[x+5] ^= XorKey;                                 // 'encrypt' with XorKey
@@ -285,31 +285,58 @@ void WchProgram() {
     } while (WchState != WCH_EXIT);             // keep looping until 0
 }
 
+/*
+void setTimeZone(char *tzname) {
 
-uint8_t WchFirmwareUpdate(void) {
+        bool found = false;
+        char line[80];
+        int pos = 0;
+        char c;
+        do {
+            pos = 0;
+            do {
+                fs->rd(fp, &c, 1);
+                if (filepos < filelen)
+                    line[pos]=c;
+                pos++;
+                filepos++;
+            } while (pos < sizeof(line) - 1 && c != '\n' && filepos < filelen);
+            //terminate with NULL character
+            line[pos]=0;
+            found = strstr(line, tzname);
+        } while (filepos < filelen && !found);
+    }
+}*/
+time_t WCHfirmware_timestamp = 0;
+uint8_t WchFirmwareUpdate(unsigned long WCHRunningVersion) {
 
-    // Initialize SPIFFS
-	if(!SPIFFS.begin(true)){
-		log_e("SPIFFS failed! already tried formatting.");
+    void *fp;
+    size_t filelen = 0;
+    filesystem->st(WCHfirmware, &filelen, &WCHfirmware_timestamp);
+    if (!filesystem) {
+        _LOG_A("ERROR cannot find CH32 flash file:%s.\n", WCHfirmware);
         return 1;
-	}
-	log_i("Total SPIFFS bytes: %u, Bytes used: %u",SPIFFS.totalBytes(),SPIFFS.usedBytes());
+    }
+    if ((fp = filesystem->op(WCHfirmware, MG_FS_READ)) == NULL) {
+        _LOG_A("ERROR cannot open CH32 flash file:%s.\n", WCHfirmware);
+        return 2;
+    }
+    if (WCHfirmware_timestamp > WCHRunningVersion + 60)  { //CH32 may take 60s to compile
+        _LOG_A("Flashing WCHfirmware version %lu over %lu.\n", WCHfirmware_timestamp, WCHRunningVersion);
+        glcd_clrln(0, 0x00);
+        glcd_clrln(1, 0x04);                                                // horizontal line
+        GLCD_print_buf2(2, (const char *) "SmartEVSE 4");
+        GLCD_print_buf2(4, (const char *) "Flashing WCH");
+        glcd_clrln(6, 0x10);                                                // horizontal line
+        glcd_clrln(7, 0x00);
 
-	if (SPIFFS.exists(WCHfirmware))	{
-		log_d("WCH firmware found on SPIFFS");
-		file = SPIFFS.open(WCHfirmware, "r");
-		if (!file) {
-			log_e("file open failed");
-            return 2;
-		} else {
-			WchProgram();                                                       	// Program Chip
-			file.close();                                                           // close file after use
-	//		SPIFFS.remove(WCHfirmware);                                             // erase file, so we only program once
-		}
+        Serial1.updateBaudRate(115200);//  Set Uart baudrate to 115200 before entering bootloader of WCH chip
+        WchProgram(fp, filelen);                                                       	// Program Chip
+        Serial1.updateBaudRate(FUNCONF_UART_PRINTF_BAUD); // Reset baudrate
     } else {
-        log_e("WCH firmware not found. Already programmed?");
-        return 3;
-    }    
+        _LOG_A("NOT Flashing WCHfirmware version %lu over %lu.\n", WCHfirmware_timestamp, WCHRunningVersion);
+    }
+    filesystem->cl(fp);
     return 0;
 }
 #endif

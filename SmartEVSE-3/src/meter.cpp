@@ -1,3 +1,5 @@
+#include "main.h"
+
 #include <meter.h>
 #include <modbus.h>
 
@@ -10,7 +12,8 @@ extern void RecomputeSoC(void);
 #define ENDIANESS_HBF_LWF 2
 #define ENDIANESS_HBF_HWF 3
 
-struct EMstruct EMConfig[EM_CUSTOM + 1] = {
+// WARNING: ONLY ADD new meters to the END of this ARRAY. The row number is stored in the config of the user, if you change the order YOU WILL RUIN THE CONFIGS OF USERS !!!!!!!
+struct EMstruct EMConfig[] = {
     /* DESC,      ENDIANNESS,      FCT, DATATYPE,            U_REG,DIV, I_REG,DIV, P_REG,DIV, E_REG_IMP,DIV, E_REG_EXP, DIV */
     {"Disabled",  ENDIANESS_LBF_LWF, 0, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,0     , 0}, // First entry!
     {"Sensorbox", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32, 0xFFFF, 0,      0, 0, 0xFFFF, 0, 0xFFFF, 0,0     , 0}, // Sensorbox (Own routine for request/receive)
@@ -20,17 +23,23 @@ struct EMstruct EMConfig[EM_CUSTOM + 1] = {
     {"InvEastrn", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32,    0x0, 0,    0x6, 0,   0x34, 0,  0x48 , 0,0x4A  , 0}, // Since Eastron SDM series are bidirectional, sometimes they are connected upsidedown, so positive current becomes negative etc.; Eastron SDM630 (V / A / W / kWh) max read count 80
     {"ABB",       ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT32,   0x5B00, 1, 0x5B0C, 2, 0x5B14, 2, 0x5000, 2,0x5004, 2}, // ABB B23 212-100 (0.1V / 0.01A / 0.01W / 0.01kWh) RS485 wiring reversed / max read count 125
     {"SolarEdge", ENDIANESS_HBF_HWF, 3, MB_DATATYPE_INT16,    40196, 0,  40191, 0,  40206, 0,  40234, 3, 40226, 3}, // SolarEdge SunSpec (0.01V (16bit) / 0.1A (16bit) / 1W  (16bit) / 1 Wh (32bit))
-    {"WAGO",      ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x5002, 0, 0x500C, 0, 0x5012, -3, 0x600C, 0,0x6018, 0}, // WAGO 879-30x0 (V / A / kW / kWh)//TODO maar WAGO heeft ook totaal
+    {"WAGO",      ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x5002, 0, 0x500C, 0, 0x5012,-3, 0x600C, 0,0x6018, 0}, // WAGO 879-30x0 (V / A / kW / kWh)//TODO maar WAGO heeft ook totaal
     {"API",       ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x5002, 0, 0x500C, 0, 0x5012, 3, 0x6000, 0,0x6018, 0}, // WAGO 879-30x0 (V / A / kW / kWh)
     {"Eastron1P", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32,    0x0, 0,    0x6, 0,   0x0C, 0,  0x48 , 0,0x4A  , 0}, // Eastron SDM630 (V / A / W / kWh) max read count 80
     {"Finder 7M", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_FLOAT32,   2500, 0,   2516, 0,   2536, 0,   2638, 3,     0, 0}, // Finder 7M.38.8.400.0212 (V / A / W / Wh) / Backlight 10173
     {"Sinotimer", ENDIANESS_HBF_HWF, 4, MB_DATATYPE_INT16,      0x0, 1,    0x3, 2,    0x8, 0, 0x0027, 2,0x0031, 2}, // Sinotimer DTS6619 (0.1V (16bit) / 0.01A (16bit) / 1W  (16bit) / 1 Wh (32bit))
-    {"Unused 1",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
-    {"Unused 2",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
+    {"HmWzrd P1", ENDIANESS_HBF_HWF, 0, MB_DATATYPE_INT16,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // Homewizard P1 - network connected
+
+    {"Schneider", ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x0BD3, 0, 0x0BB7, 0, 0x0BF3,-3, 0xB02B, 0,0xB02D, 0}, // Schneider iEM3x5x series (V / A / kW / kWh) iEM3x50 counts only Energy Import, no Export
+    {"Chint",     ENDIANESS_HBF_HWF, 3, MB_DATATYPE_FLOAT32, 0x2000, 1, 0x200C, 3, 0x2012, 1, 0x101E, 0,0x1028, 0}, // Chint DTSU666 (0.1V / mA / 0.1W / kWh)
+    {"C.Gavazzi", ENDIANESS_HBF_LWF, 4, MB_DATATYPE_INT32,      0x0, 1,    0xC, 3,   0x28, 1,   0x34, 1,  0x4E, 1}, // Carlo Gavazzi EM340 (0.1V / mA / 0.1W / 0.1kWh) 
     {"Unused 3",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
     {"Unused 4",  ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}, // unused slot for future new meters
     {"Custom",    ENDIANESS_LBF_LWF, 4, MB_DATATYPE_INT32,        0, 0,      0, 0,      0, 0,      0, 0,     0, 0}  // Last entry!
 };
+// WARNING: ONLY ADD new meters to the END of this ARRAY. The row number is stored in the config of the user, if you change the order YOU WILL RUIN THE CONFIGS OF USERS !!!!!!!
+
+uint16_t EMConfigSize = sizeof(EMConfig);
 
 struct Sensorbox SB2;
 
@@ -45,7 +54,9 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
     Import_active_energy = 0;
     Export_active_energy = 0;
     Energy = 0;
+#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
     Timeout = timeout;
+#endif
     EnergyCharged = 0;                                                  // kWh meter value energy charged. (Wh) (will reset if state changes from A->B)
     EnergyMeterStart = 0;                                               // kWh meter value is stored once EV is connected to EVSE (Wh)
     PowerMeasured = 0;                                                  // Measured Charge power in Watt by kWh meter
@@ -53,6 +64,7 @@ Meter::Meter(uint8_t type, uint8_t address, uint8_t timeout) {
                                                                         // cleared when charging, reset to 1 when disconnected (state A)
 }
 
+#if !defined(SMARTEVSE_VERSION) || SMARTEVSE_VERSION >=30 && SMARTEVSE_VERSION < 40 //not on ESP32 v4
 /**
  * Combine Bytes received over modbus
  *
@@ -156,7 +168,8 @@ signed int Meter::decodeMeasurement(uint8_t *buf, uint8_t Count, uint8_t Endiann
  * @param pointer to Current (mA)
  * @return uint8_t error
  */
-uint8_t Meter::receiveCurrentMeasurement(uint8_t *buf) {
+uint8_t Meter::receiveCurrentMeasurement(ModBus MB) {
+    uint8_t *buf = MB.Data;
     uint8_t x, offset;
     int32_t var[3];
 
@@ -164,6 +177,7 @@ uint8_t Meter::receiveCurrentMeasurement(uint8_t *buf) {
         case EM_API:
             break;
         case EM_SENSORBOX:
+        {
             // return immediately if the data contains no new P1 or CT measurement
             if (buf[3] == 0) return 0;  // error!!
             // determine if there is P1 data present, otherwise use CT data
@@ -201,7 +215,11 @@ uint8_t Meter::receiveCurrentMeasurement(uint8_t *buf) {
 
                 if (SB2_WIFImode == 2 && SB2.WiFiConnected && !SubMenu) {
                     SB2_WIFImode = 1;                                       // Portal active and connected? Switch back to Enabled.
+#ifdef SMARTEVSE_VERSION //ESP32
                     write_settings();
+#else //CH32
+                    printf("@write_settings\n");
+#endif
                     LCDNav = 0;
                 }
 
@@ -214,11 +232,15 @@ uint8_t Meter::receiveCurrentMeasurement(uint8_t *buf) {
             }
 
             // Set Sensorbox 2 to 3/4 Wire configuration (and phase Rotation) (v2.16)
-            if (buf[1] >= 0x10 && offset == 7) {
-                GridActive = 1;                                                 // Enable the GRID menu option
-                if ((buf[1] & 0x3) != (Grid << 1) && (LoadBl < 2)) ModbusWriteSingleRequest(0x0A, 0x800, Grid << 1);
-            } else GridActive = 0;
+            bool localGridActive = (buf[1] >= 0x10 && offset == 7);
+#ifdef SMARTEVSE_VERSION // ESP32 v3
+            GridActive = localGridActive;                                       // Enable the GRID menu option
+#else //CH32
+            printf("@GridActive:%u\n", localGridActive);
+#endif
+            if (localGridActive && (buf[1] & 0x3) != (Grid << 1) && (LoadBl < 2)) ModbusWriteSingleRequest(0x0A, 0x800, Grid << 1);
             break;
+        }
         case EM_SOLAREDGE:
         {
             // Need to handle the extra scaling factor
@@ -254,6 +276,13 @@ uint8_t Meter::receiveCurrentMeasurement(uint8_t *buf) {
         case EM_FINDER_7M:
             offset = 7u;
             break;
+        case EM_SCHNEIDER:
+            offset = 27u;
+            break;
+        case EM_CHINT:
+            offset = 4u;
+            break;
+            
     }
     if (offset) {                                                               // this is one of the meters that has to measure power to determine current direction
         PowerMeasured = 0;                                                      // so we calculate PowerMeasured so we dont have to poll for this again
@@ -263,13 +292,18 @@ uint8_t Meter::receiveCurrentMeasurement(uint8_t *buf) {
             PowerMeasured += Power[x];
             if (Power[x] < 0) var[x] = -var[x];
         }
+#ifndef SMARTEVSE_VERSION //CH32
+        printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
+#endif
     }
 
     // Convert Irms from mA to deciAmpère (A * 10)
     for (x = 0; x < 3; x++) {
         Irms[x] = (var[x] / 100);            // Convert to AMPERE * 10
     }
-
+#ifndef SMARTEVSE_VERSION //CH32
+    printf("@Irms:%03u,%d,%d,%d\n", Address, Irms[0], Irms[1], Irms[2]); //Irms:011,312,123,124 means: the meter on address 11(dec) has Irms[0] 312 dA, Irms[1] of 123 dA, Irms[2] of 124 dA.
+#endif
     // all OK
     return 1;
 }
@@ -328,41 +362,65 @@ signed int Meter::receivePowerMeasurement(uint8_t *buf) {
             Power[0] = (int)decodeMeasurement(buf, 0, EMConfig[Type].PDivisor);
             Power[1] = (int)decodeMeasurement(buf, 1, EMConfig[Type].PDivisor);
             Power[2] = (int)decodeMeasurement(buf, 2, EMConfig[Type].PDivisor);
-            _LOG_V("Received power EVmeter L1=(%iW), L2=(%iW), L3=(%iW)\n", Power[0], Power[1], Power[2]);
+            _LOG_V("Received power EVmeter L1=(%dW), L2=(%dW), L3=(%dW)\n", Power[0], Power[1], Power[2]);
             return (Power[0] + Power[1] + Power[2]);
         }
         default:
             return decodeMeasurement(buf, 0, EMConfig[Type].PDivisor);
     }
 }
+#endif
 
 
 void Meter::UpdateEnergies() {
     Energy = Import_active_energy - Export_active_energy;
     if (ResetKwh == 2) EnergyMeterStart = Energy;                               // At powerup, set Energy to kwh meter value
     EnergyCharged = Energy - EnergyMeterStart;                                  // Calculate Energy
+#ifndef SMARTEVSE_VERSION //CH32
+    printf("@Energy:%03u,%ld\n", Address, Energy);
+    printf("@EnergyMeterStart:%03u,%ld\n", Address, EnergyMeterStart);
+    printf("@EnergyCharged:%03d,%ld\n", Address, EnergyCharged);
+    printf("@Import_active_energy:%03d,%ld\n", Address, Import_active_energy);
+    printf("@Export_active_energy:%03d,%ld\n", Address, Export_active_energy);
+#else //ESP32 v3 and v4
 #if MODEM
     RecomputeSoC();
+#endif //MODEM
+#endif //SMARTEVSE_VERSION
+}
+
+void Meter::setTimeout(uint8_t NewTimeout) {
+#if SMARTEVSE_VERSION >= 40 //v4 ESP32
+    if (Address == MainsMeter.Address) {
+        Serial1.printf("@MainsMeterTimeout:%u\n", NewTimeout);
+    } else if (Address == EVMeter.Address) {
+        Serial1.printf("@EVMeterTimeout:%u\n", NewTimeout);
+    }
+#else
+    Timeout = NewTimeout;
 #endif
 }
 
 // Calls appropriate measurement from response
-void Meter::ResponseToMeasurement() {
+void Meter::ResponseToMeasurement(ModBus MB) {
     if (MB.Type == MODBUS_RESPONSE) {
         if (MB.Register == EMConfig[Type].IRegister) {
             if (Address == MainsMeter.Address) {
-                if (receiveCurrentMeasurement(MB.Data)) {
-                    Timeout = COMM_TIMEOUT;
+                if (receiveCurrentMeasurement(MB)) {
+                    setTimeout(COMM_TIMEOUT);
                 }
                 CalcIsum();
             } else if (Address == EVMeter.Address) {
-                if (receiveCurrentMeasurement(MB.Data)) {
-                    Timeout = COMM_EVTIMEOUT;
+                if (receiveCurrentMeasurement(MB)) {
+                    setTimeout(COMM_EVTIMEOUT);
                 }
                 CalcImeasured();
             }
         } else if (MB.Register == EMConfig[Type].PRegister) {
             PowerMeasured = receivePowerMeasurement(MB.Data);
+#ifndef SMARTEVSE_VERSION //CH32
+            printf("@PowerMeasured:%03u,%d\n", Address, PowerMeasured);
+#endif
         } else if (MB.Register == EMConfig[Type].ERegister) {
             //import active energy
             if (Type == EM_EASTRON3P_INV)

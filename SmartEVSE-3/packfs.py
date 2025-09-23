@@ -13,7 +13,7 @@ try:
     # now gzip the stuff except zones.csv since this file is not served by mongoose but directly accessed:
     for file in os.listdir("data"):
         filename = os.fsdecode(file)
-        if filename == "cert.pem" or filename == "key.pem":
+        if filename == "cert.pem" or filename == "key.pem" or filename == "CH32V203.bin" or filename == "SmartEVSE.webp":
             shutil.copy('data/' + filename, 'pack.tmp/data/' + filename)
             filelist.append('data/' + filename)
             continue
@@ -32,3 +32,6 @@ except Exception as e:
 if shutil.rmtree("pack.tmp"):
     print("Failed to clean up temporary files")
     sys.exit(9)
+# cleanup CH32 bin file if it was generated:
+if os.path.isfile("data/CH32V203.bin"):
+    os.remove("data/CH32V203.bin")
