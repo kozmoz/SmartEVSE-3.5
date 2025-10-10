@@ -168,7 +168,8 @@ void MQTTclient_t::announce(const String& entity_name, const String& domain, con
 
     String payload = "{"
         + jsn("name", entity_name)
-        + jsna("object_id", String(MQTTprefix + "-" + entity_suffix))
+        + jsna("object_id", String(MQTTprefix + "-" + entity_suffix))  // Deprecated for HA 2026.4 - still setting for backwards compatibility. Will not raise error if new default_entity_id is also set: https://github.com/home-assistant/core/pull/151996
+        + jsna("default_entity_id", String(MQTTprefix + "-" + entity_suffix))  // HA 2025.10 and up: https://github.com/home-assistant/core/pull/151775
         + jsna("unique_id", String(MQTTprefix + "-" + entity_suffix))
         + jsna("state_topic", String(MQTTprefix + "/" + entity_suffix))
         + jsna("availability_topic", String(MQTTprefix + "/connected"))
@@ -913,18 +914,26 @@ static void timer_fn(void *arg) {
 
 // HTML web form for entering WIFI credentials in AP setup portal
 static const char *html_form = R"EOF(
-<!DOCTYPE html><html><head><title>WiFi Setup</title>
-<script>
-function togglePassword(){
-  var x = document.getElementById('password');
-  x.type = x.type === 'password' ? 'text' : 'password';
-}
-</script></head><body>
-<h2>WiFi Configuration</h2>
-<form action="/save" method="POST">
-SSID:<br><input type="text" name="ssid"><br>
-Password:<br><input type="password" name="password" id="password"><br>
-<input type="checkbox" onclick="togglePassword()"> Show Password<br><br>
+<!DOCTYPE html><html><head>
+<title>WiFi Setup</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:Arial;margin:0;padding:10px;display:flex;justify-content:center}
+form{width:90%;max-width:300px}
+h2{font-size:20px;text-align:center;margin:10px 0}
+label{display:block;margin:5px 0}
+input[type=text],input[type=password]{width:100%;padding:8px;font-size:14px;border:1px solid #ccc;box-sizing:border-box}
+input[type=submit]{width:100%;padding:8px;font-size:14px;background:#4CAF50;color:#fff;border:0;cursor:pointer}
+input[type=submit]:hover{background:#45a049}
+@media (max-width:600px){form{width:95%}}</style>
+<script>function togglePassword(){var x=document.getElementById('password');x.type=x.type==='password'?'text':'password'}</script>
+</head>
+<body><form action="/save" method="POST">
+<h2>WiFi Setup</h2>
+<label>SSID:</label>
+<input type="text" name="ssid" required>
+<label>Password:</label>
+<input type="password" name="password" id="password" required>
+<label><input type="checkbox" onclick="togglePassword()">Show Password</label>
 <input type="submit" value="Save">
 </form></body></html>
 )EOF";
@@ -1177,9 +1186,13 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
         } else if (mg_http_match_uri(hm, "/reboot")) {
             shouldReboot = true;
 #ifndef SMARTEVSE_VERSION //sensorbox
-            mg_http_reply(c, 200, "", "Rebooting after 5s....");
+            mg_http_reply(c, 200, "", "Rebooting after 5s...");
 #else
-            mg_http_reply(c, 200, "", "Rebooting 5s after EV stops charging....");
+            if (State == STATE_C) {
+                mg_http_reply(c, 202, "", "Reboot scheduled: Device will reboot 5 seconds after the EV stops charging...");
+            } else {
+                mg_http_reply(c, 200, "", "Device will reboot in 5 seconds...");
+            }
 #endif
         } else if (mg_http_match_uri(hm, "/settings") && !memcmp("POST", hm->method.buf, hm->method.len)) {
             DynamicJsonDocument doc(64);
@@ -1491,10 +1504,12 @@ void WiFiSetup(void) {
 void network_loop() {
     static unsigned long lastCheck_net = 0;
     static int seconds = 0;
+    time_t now;
     if (millis() - lastCheck_net >= 1000) {
         lastCheck_net = millis();
         //this block is for non-time critical stuff that needs to run approx 1 / second
-        getLocalTime(&timeinfo, 1000U);
+        time(&now);                     // get seconds since Epoch
+        localtime_r(&now, &timeinfo);   // convert seconds to localtime
         if (!LocalTimeSet && WIFImode == 1) {
             _LOG_A("Time not synced with NTP yet.\n");
         }
