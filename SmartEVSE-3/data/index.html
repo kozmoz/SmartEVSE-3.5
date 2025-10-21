@@ -560,6 +560,8 @@
                 signal = updateLcdImage.controller.signal;
             }
 
+            console.log("==== fetch updateLcdImage called");
+
             fetch('lcd', {signal})
                 .then(response => {
                     if (!response.ok) return;
@@ -1174,6 +1176,9 @@
                     }
                     function reboot(event) {
                       event?.preventDefault();
+
+                      console.log('==== reboot() called');
+
                       let httpStatus;
                       fetch("/reboot")
                           .then(response => {
@@ -1181,9 +1186,12 @@
                             return response.text();
                           })
                           .then(message => {
+                            console.log('==== reboot() response message: ' + message);
+
                             document.body.innerHTML = `<div id="rebootMsg" class="alert alert-success" role="alert"></div>`;
                             document.querySelector('#rebootMsg').innerText = message
                             if (httpStatus === 200) {
+                              console.log('==== Show reboot message and reload the page');
                               setInterval(() => document.querySelector('#rebootMsg').innerText += '.', 500);
                               // Keep retrying until the device responds.
                               setInterval(() => window.location.reload(), 5000);
