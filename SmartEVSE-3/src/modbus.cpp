@@ -286,7 +286,10 @@ void ModbusException(uint8_t address, uint8_t function, uint8_t exception) {
 }
 #endif
 
-
+/**
+ * Broadcast System configuration to Node controllers
+ * modbus reg 0x0200 - 0x0215 (depends on MODBUS_SYS_CONFIG_COUNT)
+ */
 void BroadcastSettings(void) {
     uint16_t i,values[MODBUS_SYS_CONFIG_COUNT];
     for (i = 0; i < MODBUS_SYS_CONFIG_COUNT; i++) {
@@ -725,7 +728,7 @@ void HandleModbusResponse(void) {
     switch (MB.Function) {
         case 0x03: // (Read holding register)
         case 0x04: // (Read input register)
-            if (MainsMeter.Type && MB.Address == MainsMeter.Address) {
+            if (MainsMeter.Type && MainsMeter.Type!=EM_API && MB.Address == MainsMeter.Address) {
                 MainsMeter.ResponseToMeasurement(MB);
             } else if (EVMeter.Type && MB.Address == EVMeter.Address) {
                 EVMeter.ResponseToMeasurement(MB);
