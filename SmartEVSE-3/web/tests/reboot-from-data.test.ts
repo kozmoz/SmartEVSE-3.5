@@ -45,6 +45,56 @@ async function loadPage() {
             window.$ = $stub;
             // @ts-ignore
             window.jQuery = $stub;
+
+            // Install a fetch mock on the JSDOM window before any inline scripts run
+
+            // Also stub URL.createObjectURL/URL.revokeObjectURL inside the page window
+            try {
+                // @ts-ignore
+                window.URL = window.URL || ({} as any);
+                // @ts-ignore
+                if (typeof window.URL.createObjectURL !== 'function') {
+                    // @ts-ignore
+                    window.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+                }
+                // @ts-ignore
+                if (typeof window.URL.revokeObjectURL !== 'function') {
+                    // @ts-ignore
+                    window.URL.revokeObjectURL = vi.fn();
+                }
+            } catch (_) {
+                // ignore if not writable
+            }
+            const defaultResponse = {
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                text: async () => '',
+                json: async () => ({}),
+                blob: async () => new Blob(['']),
+            } as const;
+            // @ts-ignore
+            window.fetch = vi.fn(async (input?: any, _init?: any) => {
+                const url = typeof input === 'string' ? input : (input?.url ?? '');
+                if (typeof url === 'string' && url.endsWith('/reboot')) {
+                    return {
+                        ...defaultResponse,
+                        text: async () => 'Device will reboot in 5 seconds...',
+                    } as any;
+                }
+                return { ...defaultResponse } as any;
+            });
+
+            // Do not redefine window.location here; jsdom defines it as non-configurable.
+            // The app may call location.reload; stub it if present.
+            try {
+                if (typeof window.location.reload !== 'function') {
+                    // @ts-ignore
+                    window.location.reload = vi.fn();
+                }
+            } catch (_) {
+                // ignore if not writable
+            }
         },
     });
 
@@ -73,14 +123,7 @@ describe('ESP32 /data/index.html reboot UI (integration via JSDOM)', () => {
             };
         });
 
-        const {document, window} = await loadPage();
-
-        window.fetch = mockFetch;
-        window.location = {
-            reload : vi.fn()
-        };
-
-        console.log('==== Fetch mock installed');
+        const {document} = await loadPage();
 
         // The page uses an <a> link with onclick="reboot(event)" and a title.
         const rebootBtn = document.querySelector('a[title="Reboot your device"]');
