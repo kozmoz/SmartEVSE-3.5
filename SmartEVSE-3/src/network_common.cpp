@@ -973,6 +973,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
               preferences.clear();
               preferences.end();       
             }
+            DeleteAllRFID();                                      // All RFID UIDs
             shouldReboot = true;
             mg_http_reply(c, 200, "Content-Type: text/plain\r\n", "Erasing settings, rebooting");
         } else if (mg_http_match_uri(hm, "/") && WIFImode == 2) { // serve AP page to fill in WIFI credentials
@@ -1387,14 +1388,6 @@ void handleWIFImode() {
         _LOG_A("Start Portal...\n");
 
 #ifndef SENSORBOX_VERSION
-        // set random AP password
-        uint8_t i, c;
-        for (i=0; i<8 ;i++) {
-                c = random(16) + '0';
-                if (c > '9') c += 'a'-'9'-1;
-                APpassword[i] = c;
-        }
-
         // Start WiFi as AP
         WiFi.softAP("SmartEVSE-config", APpassword);
 #else
@@ -1432,7 +1425,11 @@ void WiFiSetup(void) {
     if (preferences.begin("KeyStorage", true) ) {                               // true = readonly
 //prevent compiler warning
 #if DBG == 1 || (DBG == 2 && LOG_LEVEL != 0)
-        uint16_t hwversion = preferences.getUShort("hwversion");                // 0x0101 (01 = SmartEVSE,  01 = hwver 01)
+        // Hardware version 01xx = SmartEVSE
+        // xx01 = v3.0 first batch
+        // xx02 = v3.0 second batch
+        // xx03 = v3.1 (ESP32-mini)
+        uint16_t hwversion = preferences.getUShort("hwversion");                
 #endif
         serialnr = preferences.getUInt("serialnr");
         String ec_private = preferences.getString("ec_private");
@@ -1450,6 +1447,12 @@ void WiFiSetup(void) {
         esp_efuse_read_block(EFUSE_BLK3, efuse_hwversion, 56, 16);
         esp_efuse_read_block(EFUSE_BLK3, efuse_serialnr, 72, 24);
 
+        // check if we can use the serialnr in the efuses if the nvs version was erased
+        uint32_t efuseserialnr = efuse_serialnr[0]+(efuse_serialnr[1]<<8)+(efuse_serialnr[2]<<16);
+        // unprogrammed efuse values are zero's
+        if (efuseserialnr != serialnr && !efuseserialnr && !serialnr) {
+            serialnr = efuseserialnr;
+        }  
         //_LOG_A("Private key: ");
         //for (uint8_t x=0; x<32; x++) _LOG_A_NO_FUNC("%02x",efuse_block1[x]);
         //_LOG_A_NO_FUNC(" hwver: %02x%02x serialnr: %u\n", efuse_hwversion[1], efuse_hwversion[0], efuse_serialnr[0]+(efuse_serialnr[1]<<8));
@@ -1464,6 +1467,14 @@ void WiFiSetup(void) {
     APhostname = "Sensorbox-" + String( serialnr);
 #endif
     WiFi.setHostname(APhostname.c_str());
+
+    // set random AP password. Used when SetupWifi is active
+    uint8_t i, c;
+    for (i=0; i<8 ;i++) {
+        c = random(16) + '0';
+        if (c > '9') c += 'a'-'9'-1;
+        APpassword[i] = c;
+    }
 
     mg_mgr_init(&mgr);  // Initialise event manager
 
