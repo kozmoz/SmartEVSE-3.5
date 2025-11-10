@@ -9,9 +9,8 @@
   "devDependencies": {
     "@testing-library/dom": "10.4.1",
     "@testing-library/user-event": "14.6.1",
-    "@types/node": "24.5.2",
-    "jsdom": "24.1.3",
-    "vitest": "2.1.9",
-    "whatwg-fetch": "^3.6.20"
+    "@types/node": "24.10.0",
+    "jsdom": "27.1.0",
+    "vitest": "2.1.9"
   }
 }
