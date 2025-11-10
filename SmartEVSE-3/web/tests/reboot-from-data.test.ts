@@ -1,20 +1,24 @@
 import {describe, it, expect} from 'vitest';
 import {loadPage} from './setup';
+import userEvent from '@testing-library/user-event'
+import {getByLabelText, getByText} from "@testing-library/dom";
 
 describe('ESP32 /data/index.html reboot UI (integration via JSDOM)', () => {
     it('invokes reboot flow and shows a status message when Reboot is clicked', async () => {
 
-        const {document, window} = await loadPage();
+        // Setup userEvent for simulating user interactions.
+        const user = userEvent.setup();
+
+        // Render the page.
+        const {document} = await loadPage();
 
         // The page uses an-<a> link with onclick="reboot(event)" and a title.
-        const rebootBtn = document.querySelector('a[title="Reboot your device"]');
+        const rebootBtn: any = Array.from(document.querySelectorAll('a'))
+            .find((a: HTMLLinkElement) => a.textContent === 'Reboot');
         expect(rebootBtn).toBeTruthy();
 
-        rebootBtn?.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
-
-        // Wait a couple of ticks for the fetch promise chain to run
-        await new Promise((r) => setImmediate(r));
-        await new Promise((r) => setTimeout(r, 0));
+        // equivalent of: rebootBtn?.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+        await user.click(rebootBtn);
 
         // The reboot() function fetches "/reboot" and shows a message div
         const msg = document.querySelector('#rebootMsg');
