@@ -22,9 +22,7 @@
 
   <script>
       let endpoint = '/settings';
-      if (window.location.host.includes('localhost')) {
-        endpoint = 'http://192.168.1.132/settings';
-      }
+      // let endpoint = 'http://10.0.0.36/settings';
       let initiated=false;
       let loadDataTimer;
       let mqttEditMode = false;
@@ -180,9 +178,6 @@
         loadRawSettings();
       }
 
-      /** Refresh the overview and settings from the REST API.
-       * @returns {void}
-       */
       function loadData(){
         $.ajax({
               url: endpoint,
@@ -192,11 +187,7 @@
             // render code below) never stop the polling.
             clearTimeout(loadDataTimer);
             loadDataTimer = setTimeout(loadData, 5000);
-          }).then(/**
-           * Render the latest settings response.
-           * @param {Object} data Settings response.
-           * @returns {void}
-           */ function(data) {
+          }).then(function(data) {
             if(!initiated) {
               initiated = true;
               // Set the text and the data-version attribute dynamically

@@ -1553,7 +1553,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         // Static doc: allocated once on first /settings GET, reused forever.
         // Avoids ~3 KB heap churn every few seconds when the web statuspage polls.
-        static DynamicJsonDocument doc(3072 + JSON_OBJECT_SIZE(3)); // Include the three additional MQTT runtime fields.
+        static DynamicJsonDocument doc(3072 + JSON_OBJECT_SIZE(3)); // https://arduinojson.org/v6/assistant/ + 3 MQTT status fields
         doc.clear();
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
