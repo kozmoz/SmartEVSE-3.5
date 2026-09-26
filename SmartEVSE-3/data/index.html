@@ -22,7 +22,9 @@
 
   <script>
       let endpoint = '/settings';
-      // let endpoint = 'http://10.0.0.36/settings';
+      if (window.location.host.includes('localhost')) {
+        endpoint = 'http://192.168.1.132/settings';
+      }
       let initiated=false;
       let mqttEditMode = false;
       let ocppEditMode = false;
@@ -177,10 +179,17 @@
         loadRawSettings();
       }
 
+      /** Refresh the overview and settings from the REST API.
+       * @returns {void}
+       */
       function loadData(){
         $.ajax({
               url: endpoint
-          }).then(function(data) {
+          }).then(/**
+           * Render the latest settings response.
+           * @param {Object} data Settings response.
+           * @returns {void}
+           */ function(data) {
             if(!initiated) {
               initiated = true;
               // Set the text and the data-version attribute dynamically
@@ -248,7 +257,15 @@
             }
 
             if (data.mqtt) {
-              $('#mqtt').text((data.mqtt.status) || 'N/A').show();
+              const mqttLabels = {
+                Disabled: 'Disabled',
+                Connecting: 'Connecting...',
+                Connected: 'Connected',
+                Error: 'Connection failed'
+              };
+              const mqttLine = document.getElementById('mqtt');
+              mqttLine.textContent = mqttLabels[data.mqtt.status] || 'N/A';
+              mqttLine.style.display = '';
               $('#mqtt_config').show();
             } else {
               $('#mqtt').text('').hide();

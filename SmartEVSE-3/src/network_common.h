@@ -63,6 +63,23 @@ extern bool MQTTSmartServerChanged;        // Flag to trigger reconnect from net
 extern bool WIFImodeChanged;               // Flag to trigger handleWIFImode() from network_loop()
 extern String MQTTprivatePassword;   
 
+enum class MqttStatus { Disabled, Connecting, Connected, Error };
+enum class MqttError {
+    None, NetworkUnavailable, DnsFailed, ConnectionRefused, AuthenticationFailed,
+    TlsFailed, Timeout, ConnectionLost, Unknown
+};
+
+struct MqttRuntimeState {
+    MqttStatus status = MqttStatus::Disabled;
+    MqttError last_error = MqttError::None;
+    uint32_t connected_since = 0;
+    uint32_t last_connect_attempt = 0;
+};
+
+const char *mqttStatusToString(MqttStatus status);
+const char *mqttErrorToString(MqttError error);
+MqttRuntimeState mqttGetRuntimeState();
+
 class MQTTclient_t {
 #if MQTT_ESP == 0
 private:

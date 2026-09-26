@@ -1511,6 +1511,12 @@ struct MgChunkPrint : public Print {
 };
 
 // handles URI, returns true if handled, false if not
+/** Handle EVSE REST requests, including the settings snapshot.
+ * @param c HTTP connection.
+ * @param hm Parsed HTTP message.
+ * @param request Query parameter adapter.
+ * @return Whether the URI was handled.
+ */
 bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request) {
 //    if (mg_match(hm->uri, mg_str("/settings"), NULL)) {               // REST API call?
     if (mg_http_match_uri(hm, "/settings")) {                            // REST API call?
@@ -1553,7 +1559,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 
         // Static doc: allocated once on first /settings GET, reused forever.
         // Avoids ~3 KB heap churn every few seconds when the web statuspage polls.
-        static DynamicJsonDocument doc(3072); // https://arduinojson.org/v6/assistant/
+        static DynamicJsonDocument doc(3072 + JSON_OBJECT_SIZE(3)); // Include the three additional MQTT runtime fields.
         doc.clear();
         doc["version"] = String(VERSION);
         doc["serialnr"] = serialnr;
@@ -1659,11 +1665,11 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
         doc["mqtt"]["username"] = MQTTuser;
         doc["mqtt"]["password_set"] = MQTTpassword != "";
         doc["mqtt"]["tls"] = MQTTtls;
-        if (MQTTclient.connected) {
-            doc["mqtt"]["status"] = "Connected";
-        } else {
-            doc["mqtt"]["status"] = "Disconnected";
-        }
+        const MqttRuntimeState mqttState = mqttGetRuntimeState();
+        doc["mqtt"]["status"] = mqttStatusToString(mqttState.status);
+        doc["mqtt"]["last_error"] = mqttErrorToString(mqttState.last_error);
+        doc["mqtt"]["connected_since"] = mqttState.connected_since;
+        doc["mqtt"]["last_connect_attempt"] = mqttState.last_connect_attempt;
         doc["mqtt"]["smartevse_server"] = MQTTSmartServer;
 #endif
         doc["ocpp"]["mode"] = OcppMode ? "Enabled" : "Disabled";
