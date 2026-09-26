@@ -26,6 +26,7 @@
         endpoint = 'http://192.168.1.132/settings';
       }
       let initiated=false;
+      let loadDataTimer;
       let mqttEditMode = false;
       let ocppEditMode = false;
       let last_evse_state_id=0;
@@ -184,7 +185,13 @@
        */
       function loadData(){
         $.ajax({
-              url: endpoint
+              url: endpoint,
+              timeout: 5000
+          }).always(function() {
+            // Schedule the next refresh first, so errors (or exceptions in the
+            // render code below) never stop the polling.
+            clearTimeout(loadDataTimer);
+            loadDataTimer = setTimeout(loadData, 5000);
           }).then(/**
            * Render the latest settings response.
            * @param {Object} data Settings response.
@@ -509,8 +516,6 @@
             } else {
               $('[id=ocpp_config_outer]').hide();
             }
-
-            setTimeout(loadData, 5000);
           });
       }
 

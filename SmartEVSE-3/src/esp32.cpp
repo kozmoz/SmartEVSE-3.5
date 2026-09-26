@@ -1511,12 +1511,6 @@ struct MgChunkPrint : public Print {
 };
 
 // handles URI, returns true if handled, false if not
-/** Handle EVSE REST requests, including the settings snapshot.
- * @param c HTTP connection.
- * @param hm Parsed HTTP message.
- * @param request Query parameter adapter.
- * @return Whether the URI was handled.
- */
 bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerRequest* request) {
 //    if (mg_match(hm->uri, mg_str("/settings"), NULL)) {               // REST API call?
     if (mg_http_match_uri(hm, "/settings")) {                            // REST API call?
