@@ -273,3 +273,227 @@ button.ui-btn, a.ui-btn {
     opacity: .5;
     cursor: not-allowed;
 }
+
+/* MQTT configuration and connection status. */
+.mqtt-panel {
+    color: var(--gray-dark);
+}
+
+.mqtt-heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: .75rem;
+}
+
+.mqtt-heading-row h2 {
+    margin: 0;
+    color: var(--gray-dark);
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.mqtt-status {
+    display: flex;
+    align-items: flex-start;
+    gap: .9rem;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border: 1px solid #d1d3e2;
+    border-radius: .35rem;
+    background-color: #f8f9fc;
+}
+
+.mqtt-status-icon {
+    flex: 0 0 1.5rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    margin-top: .1rem;
+    border-radius: 50%;
+    background-color: var(--gray);
+}
+
+.mqtt-status-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    line-height: 1.35;
+}
+
+.mqtt-status-copy strong {
+    color: var(--gray-dark);
+    font-size: 1.05rem;
+}
+
+.mqtt-status-copy small {
+    margin-top: .15rem;
+    color: var(--gray);
+}
+
+.mqtt-status--connected {
+    border-color: #bff0de;
+    background-color: #f0fbf7;
+}
+
+.mqtt-status--connected .mqtt-status-icon {
+    background-color: var(--success);
+}
+
+.mqtt-status--connecting {
+    border-color: #fceec9;
+    background-color: #fffaf0;
+}
+
+.mqtt-status--connecting .mqtt-status-icon {
+    border: 3px dotted var(--warning);
+    background-color: transparent;
+    animation: mqtt-spin 1.5s linear infinite;
+}
+
+.mqtt-status--error {
+    border-color: #f8ccc8;
+    background-color: #fff4f3;
+}
+
+.mqtt-status--error .mqtt-status-icon {
+    position: relative;
+    background-color: var(--danger);
+}
+
+.mqtt-status--error .mqtt-status-icon::after {
+    content: "!";
+    position: absolute;
+    inset: 0;
+    color: white;
+    font-weight: 700;
+    line-height: 1.5rem;
+    text-align: center;
+    text-shadow: none;
+}
+
+.mqtt-status--disabled .mqtt-status-icon {
+    position: relative;
+}
+
+.mqtt-status--disabled .mqtt-status-icon::after {
+    content: "−";
+    position: absolute;
+    inset: 0;
+    color: white;
+    font-weight: 700;
+    line-height: 1.4rem;
+    text-align: center;
+    text-shadow: none;
+}
+
+@keyframes mqtt-spin {
+    to { transform: rotate(360deg); }
+}
+
+.mqtt_settings {
+    margin-bottom: .75rem;
+    padding: 1rem;
+    border: 1px solid #e3e6f0;
+    border-radius: .35rem;
+}
+
+.mqtt-form-row,
+.mqtt-cert-row {
+    display: grid;
+    grid-template-columns: minmax(8rem, 10rem) minmax(12rem, 22rem) minmax(12rem, 1fr);
+    align-items: center;
+    gap: .35rem 1rem;
+    margin-bottom: .65rem;
+}
+
+.mqtt-form-row > label,
+.mqtt-form-row > .mqtt-form-label,
+.mqtt-cert-row > label {
+    margin: 0;
+    color: var(--gray-dark);
+    font-weight: 700;
+}
+
+.mqtt-form-row > .ui-input-text,
+.mqtt-form-row > input,
+.mqtt-cert-row > textarea {
+    width: 100%;
+    margin: 0;
+}
+
+.mqtt-form-row > small,
+.mqtt-cert-row > small {
+    color: var(--gray);
+}
+
+.mqtt-checkbox-control {
+    justify-self: start;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.mqtt-checkbox-control .ui-checkbox {
+    width: auto;
+    margin: 0;
+}
+
+.mqtt-checkbox-control .ui-checkbox label {
+    margin: 0;
+}
+
+.mqtt-cert-row {
+    align-items: start;
+}
+
+.mqtt-cert-row .ui-input-text,
+.mqtt-cert-row textarea {
+    min-height: 11rem;
+    font-family: var(--font-family-monospace), monospace;
+}
+
+.mqtt-actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-left: 11rem;
+}
+
+.mqtt-save-spinner {
+    display: inline-block;
+    width: 1.25rem;
+    height: 1.25rem;
+    border: .2rem solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: mqtt-spin .75s linear infinite;
+}
+
+.mqtt-note {
+    margin: 0;
+    color: var(--gray);
+    font-size: .9rem;
+}
+
+@media (max-width: 767px) {
+    .mqtt-form-row,
+    .mqtt-cert-row {
+        grid-template-columns: 1fr;
+    }
+
+    .mqtt-form-row > small,
+    .mqtt-cert-row > small {
+        margin-top: -.15rem;
+    }
+
+    .mqtt-actions {
+        margin-left: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mqtt-status--connecting .mqtt-status-icon,
+    .mqtt-save-spinner {
+        animation: none;
+    }
+}

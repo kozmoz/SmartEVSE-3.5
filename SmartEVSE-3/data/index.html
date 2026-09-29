@@ -21,8 +21,10 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
 
   <script>
-      let endpoint = '/settings';
-      // let endpoint = 'http://10.0.0.36/settings';
+      // Temporary: use the development EVSE when serving the page locally.
+      const endpoint = window.location.href.includes('localhost')
+        ? 'http://192.168.1.92/settings'
+        : '/settings';
       let initiated=false;
       let loadDataTimer;
       let mqttEditMode = false;
@@ -40,11 +42,75 @@
 
       // Function to toggle cert visibility
       function toggleCertVisibility() {
-          if ($('#mqtt_tls').is(':checked')) {
+          if ($('#mqtt_tls').is(':checked') && $('#mqtt_enabled').is(':checked')) {
               $('#mqtt_ca_cert_wrapper').show();
           } else {
               $('#mqtt_ca_cert_wrapper').hide();
           }
+      }
+
+      function setMqttFieldsEnabled() {
+          const enabled = $('#mqtt_enabled').is(':checked');
+          $('#mqtt_host, #mqtt_port, #mqtt_username, #mqtt_password, #mqtt_topic_prefix, #mqtt_tls, #mqtt_ca_cert')
+            .prop('disabled', !enabled);
+          if ($('#mqtt_tls').hasClass('ui-checkboxradio')) {
+            $('#mqtt_tls').checkboxradio('refresh');
+          }
+          toggleCertVisibility();
+      }
+
+      function formatMqttTimestamp(timestamp) {
+        if (!timestamp) return '';
+        return new Date(timestamp * 1000).toLocaleString(undefined, {
+          dateStyle: 'short',
+          timeStyle: 'short'
+        });
+      }
+
+      function updateMqttStatus(mqtt) {
+        const status = mqtt.status || 'Error';
+        const state = status.toLowerCase();
+        const errorLabels = {
+          NetworkUnavailable: 'Network unavailable',
+          DnsFailed: 'Broker name could not be resolved',
+          ConnectionRefused: 'Connection refused',
+          AuthenticationFailed: 'Authentication failed',
+          TlsFailed: 'TLS connection failed',
+          Timeout: 'Connection timed out',
+          ConnectionLost: 'Connection lost',
+          Unknown: 'Unknown connection error'
+        };
+        const titleLabels = {
+          Disabled: 'Disabled',
+          Connecting: 'Connecting...',
+          Connected: 'Connected',
+          Error: 'Connection failed'
+        };
+        const broker = mqtt.host ? mqtt.host + ':' + mqtt.port : '';
+        let details = 'MQTT is turned off';
+        let meta = '';
+
+        if (status === 'Connected') {
+          details = 'Connected to ' + broker;
+          meta = mqtt.topic_prefix ? 'Topic: ' + mqtt.topic_prefix : '';
+          const connectedSince = formatMqttTimestamp(mqtt.connected_since);
+          if (connectedSince) meta += (meta ? ' · ' : '') + 'Since ' + connectedSince;
+        } else if (status === 'Connecting') {
+          details = broker ? 'Trying ' + broker : 'Waiting for broker settings';
+          meta = 'Retrying automatically';
+        } else if (status === 'Error') {
+          details = errorLabels[mqtt.last_error] || errorLabels.Unknown;
+          const lastAttempt = formatMqttTimestamp(mqtt.last_connect_attempt);
+          meta = lastAttempt ? 'Last attempt: ' + lastAttempt : 'Configuration remains saved';
+        }
+
+        const panel = document.getElementById('mqtt_status_panel');
+        panel.className = 'mqtt-status mqtt-status--' + state;
+        document.getElementById('mqtt_status_title').textContent = titleLabels[status] || titleLabels.Error;
+        document.getElementById('mqtt_status_detail').textContent = details;
+        document.getElementById('mqtt_status_meta').textContent = meta;
+        const mqttNote = document.querySelector('.mqtt-note');
+        if (mqttNote) mqttNote.hidden = status !== 'Connected';
       }
 
       /**
@@ -265,6 +331,7 @@
               mqttLine.textContent = mqttLabels[data.mqtt.status] || 'N/A';
               mqttLine.style.display = '';
               $('#mqtt_config').show();
+              updateMqttStatus(data.mqtt);
             } else {
               $('#mqtt').text('').hide();
               $('.config').hide();
@@ -438,11 +505,15 @@
                 $('#mqtt_host').val(data.mqtt.host);
                 $('#mqtt_port').val(data.mqtt.port);
                 $('#mqtt_username').val(data.mqtt.username);
-                $('#mqtt_password').val(data.mqtt.password);
+                $('#mqtt_password')
+                  .val('')
+                  .attr('placeholder', data.mqtt.password_set ? 'Password configured' : 'Not configured')
+                  .data('password-set', !!data.mqtt.password_set);
                 $('#mqtt_topic_prefix').val(data.mqtt.topic_prefix);
                 $('#mqtt_tls').prop('checked', data.mqtt.tls).checkboxradio("refresh");  // Set and refresh widget
+                $('#mqtt_enabled').prop('checked', data.mqtt.status !== 'Disabled').checkboxradio("refresh");
                 $('#mqtt_ca_cert').val(data.mqtt.ca_cert || '');
-                toggleCertVisibility();
+                setMqttFieldsEnabled();
             }
 
             if (data.settings.lcdlock == 1) {
@@ -521,6 +592,7 @@
 
       // Add event listener for TLS checkbox
       $(document).on('change', '#mqtt_tls', toggleCertVisibility);
+      $(document).on('change', '#mqtt_enabled', setMqttFieldsEnabled);
   </script>
 
 
@@ -1654,23 +1726,31 @@
                     function configureMqtt() {
                         var params = {
                             mqtt_update:       1,
-                            mqtt_host:         $('#mqtt_host').val(),
+                            mqtt_host:         $('#mqtt_enabled').is(':checked') ? $('#mqtt_host').val() : '',
                             mqtt_port:         $('#mqtt_port').val(),
                             mqtt_username:     $('#mqtt_username').val(),
-                            mqtt_password:     $('#mqtt_password').val(),
                             mqtt_topic_prefix: $('#mqtt_topic_prefix').val(),
                             mqtt_tls:          $('#mqtt_tls').is(':checked') ? 1 : 0,
                             mqtt_ca_cert:      $('#mqtt_ca_cert').val()
                         };
+                        // An empty password field means "keep the configured password".
+                        // Only send it when the user entered a replacement, or no password exists yet.
+                        var password = $('#mqtt_password').val();
+                        if (password || !$('#mqtt_password').data('password-set')) {
+                            params.mqtt_password = password;
+                        }
                         // Build query string with proper encoding
                         var query = Object.keys(params)
                             .map(k => k + "=" + encodeURIComponent(params[k]))
                             .join("&");
 
-                        $.post("/settings?" + query);
-                        alert('Settings applied');
-                        toggleMqttEdit();
-                        event.preventDefault();
+                        $('#mqtt_save_spinner').prop('hidden', false);
+                        $.post("/settings?" + query).always(function() {
+                            setTimeout(function() {
+                                $('#mqtt_save_spinner').prop('hidden', true);
+                            }, 1000);
+                        });
+
                     }
                     function toggleLCDlock() {
                       var LCDlockCheckbox = document.getElementById("lcdlock");
@@ -1923,26 +2003,74 @@
                             <div class="row no-gutters align-items-center">
                                 <div class="col mr-2">
                                     <div class="text font-weight-bold text-primary text-uppercase mb-1">Config</div>
-                                    <div class="row no-gutters align-items-center" id="mqtt_config">
-                                        <div class="col-auto h5 mb-0 mr-3 font-weight-bold text-gray-800" style="width: 120px;">
-                                            MQTT:
+                                    <section id="mqtt_config" class="mqtt-panel" aria-labelledby="mqtt_heading">
+                                        <div class="mqtt-heading-row">
+                                            <h2 id="mqtt_heading">MQTT</h2>
+                                            <button type="button" onclick="toggleMqttEdit()" id="edit_mqtt_button">Edit Settings</button>
                                         </div>
-                                        <div class="col">
-                                                <button onclick="toggleMqttEdit()" style="display:inline-block;" id="edit_mqtt_button">Edit Settings</button>
-                                            <div class="mqtt_settings" style="display:none">
-                                                <label>Host: <input id="mqtt_host" title="Leave empty to disable MQTT"></label>
-                                                <label>Port: <input id="mqtt_port" title="Usually 1883 for MQTT, and 8883 for secure MQTTS"></label>
-                                                <label>Username: <input id="mqtt_username" title="Leave empty for anonymous MQTT"></label>
-                                                <label>Password: <input id="mqtt_password" title="Leave empty for anonymous MQTT"></label>
-                                                <label>Topic Prefix: <input id="mqtt_topic_prefix"></label>
-                                                <label>Enable TLS: <input type="checkbox" id="mqtt_tls" value="1"></label>
-                                                <div id="mqtt_ca_cert_wrapper" style="display:none;">
-                                                    <label>CA Certificate (PEM): <textarea id="mqtt_ca_cert" rows="10" style="width:100%; font-family:monospace;" title="Paste the PEM-formatted CA certificate here for TLS. if left empty, LetsEncrypt will be used as default"></textarea></label>
-                                                </div>
-                                                <button onclick="configureMqtt()" style="display:inline-block;">Save</button>
+
+                                        <div id="mqtt_status_panel" class="mqtt-status mqtt-status--disabled" role="status" aria-live="polite">
+                                            <span class="mqtt-status-icon" aria-hidden="true"></span>
+                                            <div class="mqtt-status-copy">
+                                                <strong id="mqtt_status_title">Disabled</strong>
+                                                <span id="mqtt_status_detail">MQTT is turned off</span>
+                                                <small id="mqtt_status_meta"></small>
                                             </div>
                                         </div>
-                                    </div>
+
+                                        <div class="mqtt_settings" style="display:none">
+                                            <div class="mqtt-form-row">
+                                                <div class="mqtt-form-label">MQTT:</div>
+                                                <div class="mqtt-checkbox-control">
+                                                    <input type="checkbox" class="form-check-input" id="mqtt_enabled" value="1">
+                                                    <label class="form-check-label" for="mqtt_enabled">Enable MQTT</label>
+                                                </div>
+                                            </div>
+                                            <div class="mqtt-form-row">
+                                                <label for="mqtt_host">Broker:</label>
+                                                <input id="mqtt_host" autocomplete="url" title="IP address or hostname of your MQTT broker">
+                                                <small>IP address or hostname of your MQTT broker.</small>
+                                            </div>
+                                            <div class="mqtt-form-row">
+                                                <label for="mqtt_port">Port:</label>
+                                                <input type="number" id="mqtt_port" min="1" max="65535" inputmode="numeric" title="Usually 1883 for MQTT, and 8883 for secure MQTTS">
+                                                <small>Default is 1883, or 8883 for TLS.</small>
+                                            </div>
+                                            <div class="mqtt-form-row">
+                                                <label for="mqtt_topic_prefix">Topic prefix:</label>
+                                                <input id="mqtt_topic_prefix">
+                                                <small>Base topic for all MQTT messages.</small>
+                                            </div>
+                                            <div class="mqtt-form-row">
+                                                <label for="mqtt_username">Username:</label>
+                                                <input id="mqtt_username" autocomplete="username">
+                                                <small>Leave empty if authentication is not required.</small>
+                                            </div>
+                                            <div class="mqtt-form-row">
+                                                <label for="mqtt_password">Password:</label>
+                                                <input type="password" id="mqtt_password" autocomplete="new-password">
+                                                <small>Leave empty to keep the configured password.</small>
+                                            </div>
+                                            <div class="mqtt-form-row">
+                                                <div class="mqtt-form-label">Encryption:</div>
+                                                <div class="mqtt-checkbox-control">
+                                                    <input type="checkbox" class="form-check-input" id="mqtt_tls" value="1">
+                                                    <label class="form-check-label" for="mqtt_tls">TLS</label>
+                                                </div>
+                                            </div>
+                                            <div id="mqtt_ca_cert_wrapper" class="mqtt-cert-row" style="display:none;">
+                                                <label for="mqtt_ca_cert">CA Certificate (PEM):</label>
+                                                <textarea id="mqtt_ca_cert" rows="10" title="Paste the PEM-formatted CA certificate here for TLS. If left empty, Let's Encrypt will be used by default."></textarea>
+                                                <small>Leave empty to use the default Let's Encrypt certificate.</small>
+                                            </div>
+                                            <div class="mqtt-actions">
+                                                <button type="button" onclick="configureMqtt()">Save</button>
+                                                <span id="mqtt_save_spinner" class="mqtt-save-spinner" role="status" aria-label="Saving" hidden></span>
+                                            </div>
+                                        </div>
+
+                                        <p class="mqtt-note" hidden><span aria-hidden="true">&#x24D8;</span> Home Assistant discovery is published automatically when MQTT is enabled.</p>
+                                    </section>
                                   </div>
                                 </div>
                             </div>
