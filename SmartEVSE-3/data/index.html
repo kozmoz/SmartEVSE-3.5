@@ -39,26 +39,27 @@
       if (isRawDataPage) {
         document.addEventListener('DOMContentLoaded', initRawDataPage);
       } else {
-        $(document).ready(loadData());
+        $(document).ready(loadData);
       }
 
       // Function to toggle cert visibility
       function toggleCertVisibility() {
-          const tlsEnabled = $('#mqtt_tls').is(':checked');
+          const tls = $('#mqtt_tls');
+          const tlsEnabled = tls.is(':checked');
+          const showCertificate = $('#mqtt_enabled').is(':checked') && !tls.prop('disabled') && tlsEnabled;
           $('#mqtt_port').attr('placeholder', tlsEnabled ? '8883' : '1883');
-          if (tlsEnabled && $('#mqtt_enabled').is(':checked')) {
-              $('#mqtt_ca_cert_wrapper').show();
-          } else {
-              $('#mqtt_ca_cert_wrapper').hide();
-          }
+          $('#mqtt_ca_cert_wrapper').prop('hidden', !showCertificate);
       }
 
       function setMqttFieldsEnabled() {
           const enabled = $('#mqtt_enabled').is(':checked');
-          $('#mqtt_host, #mqtt_port, #mqtt_username, #mqtt_password, #mqtt_topic_prefix, #mqtt_tls, #mqtt_ca_cert')
+          $('#mqtt_host, #mqtt_port, #mqtt_username, #mqtt_password, #mqtt_topic_prefix, #mqtt_ca_cert')
             .prop('disabled', !enabled);
-          if ($('#mqtt_tls').hasClass('ui-checkboxradio')) {
-            $('#mqtt_tls').checkboxradio('refresh');
+          const tls = $('#mqtt_tls');
+          if (tls.closest('.ui-checkbox').length) {
+            tls.checkboxradio(enabled ? 'enable' : 'disable');
+          } else {
+            tls.prop('disabled', !enabled);
           }
           toggleCertVisibility();
       }
@@ -2198,12 +2199,12 @@
                                             <div class="mqtt-form-row">
                                                 <div class="mqtt-form-label">Secure connection:</div>
                                                 <div class="mqtt-checkbox-control">
-                                                    <input type="checkbox" class="form-check-input" id="mqtt_tls" value="1">
+                                                    <input type="checkbox" class="form-check-input" id="mqtt_tls" value="1" disabled>
                                                     <label class="form-check-label" for="mqtt_tls">Use TLS</label>
                                                 </div>
                                                 <small>Encrypt communication with the MQTT broker.</small>
                                             </div>
-                                            <div id="mqtt_ca_cert_wrapper" class="mqtt-cert-row" style="display:none;">
+                                            <div id="mqtt_ca_cert_wrapper" class="mqtt-cert-row" hidden>
                                                 <label for="mqtt_ca_cert">CA certificate:</label>
                                                 <textarea id="mqtt_ca_cert" rows="10" title="Optional. Paste a PEM-encoded CA certificate, or leave blank to use the built-in Let's Encrypt certificate."></textarea>
                                                 <small>Optional. Paste a PEM-encoded CA certificate, or leave blank to use the built-in Let's Encrypt certificate.</small>
