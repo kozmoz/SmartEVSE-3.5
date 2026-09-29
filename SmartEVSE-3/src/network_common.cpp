@@ -2292,9 +2292,14 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     doc["mqtt_host"] = MQTTHost;
                 }
 
+                if (request->hasParam("mqtt_tls")) {
+                    MQTTtls = request->getParam("mqtt_tls")->value() == "1";
+                    doc["mqtt_tls"] = MQTTtls;
+                }
+
                 if(request->hasParam("mqtt_port")) {
                     MQTTPort = request->getParam("mqtt_port")->value().toInt();
-                    if (MQTTPort == 0) MQTTPort = 1883;
+                    if (MQTTPort == 0) MQTTPort = MQTTtls ? 8883 : 1883;
                     doc["mqtt_port"] = MQTTPort;
                 }
 
@@ -2320,11 +2325,6 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                         MQTTpassword.clear();
                     }
                     doc["mqtt_password_set"] = (MQTTpassword != "");
-                }
-
-                if (request->hasParam("mqtt_tls")) {
-                    MQTTtls = request->getParam("mqtt_tls")->value() == "1";
-                    doc["mqtt_tls"] = MQTTtls;
                 }
 
                 if(request->hasParam("mqtt_ca_cert")) {

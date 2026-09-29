@@ -422,6 +422,12 @@ button.ui-btn, a.ui-btn {
     margin: 0;
 }
 
+.mqtt-form-row > .ui-input-text.mqtt-field-invalid,
+.mqtt-form-row > input.mqtt-field-invalid {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 .1rem rgba(231, 74, 59, .25);
+}
+
 .mqtt-form-row > small,
 .mqtt-cert-row > small {
     color: var(--gray);

@@ -76,6 +76,57 @@
         return /^[a-z0-9._-]+$/i.test(value) && /[a-z0-9]/i.test(value);
       }
 
+      function isValidMqttPort(value) {
+        return value === '' || (/^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 65535);
+      }
+
+      function isValidMqttTopicPrefix(value) {
+        return value.length > 0 &&
+          !value.startsWith('/') &&
+          !value.endsWith('/') &&
+          !value.includes('//') &&
+          !/[#+\u0000-\u001f\u007f]/.test(value);
+      }
+
+      const mqttFieldLabels = {
+        mqtt_host: 'Broker address',
+        mqtt_port: 'Port',
+        mqtt_topic_prefix: 'Topic prefix'
+      };
+
+      function setMqttFieldInvalid(input, invalid) {
+        const field = $(input);
+        const wrapper = field.closest('.ui-input-text');
+        if (invalid) {
+          input.setAttribute('aria-invalid', 'true');
+          field.addClass('mqtt-field-invalid');
+          wrapper.addClass('mqtt-field-invalid');
+        } else {
+          input.removeAttribute('aria-invalid');
+          field.removeClass('mqtt-field-invalid');
+          wrapper.removeClass('mqtt-field-invalid');
+        }
+      }
+
+      function showMqttValidationError(invalidInputs) {
+        const error = $('#mqtt_validation_error');
+        if (!invalidInputs.length) {
+          error.prop('hidden', true);
+          return;
+        }
+
+        const labels = invalidInputs.map(function(input) {
+          return mqttFieldLabels[input.id];
+        });
+        const fieldText = labels.length === 1 ? 'field' : 'fields';
+        const labelText = labels.length < 3
+          ? labels.join(' and ')
+          : labels.slice(0, -1).join(', ') + ', and ' + labels[labels.length - 1];
+        error
+          .text('The configuration cannot be saved. Check the following ' + fieldText + ': ' + labelText + '.')
+          .prop('hidden', false);
+      }
+
       function formatMqttTimestamp(timestamp) {
         if (!timestamp) return '';
         return new Date(timestamp * 1000).toLocaleString(undefined, {
@@ -610,10 +661,12 @@
       // Add event listener for TLS checkbox
       $(document).on('change', '#mqtt_tls', toggleCertVisibility);
       $(document).on('change', '#mqtt_enabled', setMqttFieldsEnabled);
-      $(document).on('input', '#mqtt_host', function() {
-        this.setCustomValidity('');
-        this.removeAttribute('aria-invalid');
-        $('#mqtt_validation_error').prop('hidden', true);
+      $(document).on('input', '#mqtt_host, #mqtt_port, #mqtt_topic_prefix', function() {
+        setMqttFieldInvalid(this, false);
+        const invalidInputs = ['mqtt_host', 'mqtt_port', 'mqtt_topic_prefix']
+          .map(function(id) { return document.getElementById(id); })
+          .filter(function(input) { return input.getAttribute('aria-invalid') === 'true'; });
+        showMqttValidationError(invalidInputs);
       });
   </script>
 
@@ -1737,12 +1790,12 @@
                         mqttEditMode = !mqttEditMode;
                         $('.mqtt_settings').toggle();
                         if (mqttEditMode) {
-                            $('#edit_mqtt_button').text("Close Settings")
+                            $('#edit_mqtt_button').text("Close settings")
                             $.get("/mqtt_ca_cert", function(certData) {
                                 $('#mqtt_ca_cert').val(certData);
                             });
                         } else {
-                            $('#edit_mqtt_button').text("Edit Settings")
+                            $('#edit_mqtt_button').text("Edit settings")
                         }
                     }
                     function configureMqtt() {
@@ -1750,31 +1803,43 @@
                             return String($(selector).val() || '').trim();
                         };
                         var mqttEnabled = $('#mqtt_enabled').is(':checked');
+                        var tlsEnabled = $('#mqtt_tls').is(':checked');
                         var host = trimmedValue('#mqtt_host');
+                        var port = trimmedValue('#mqtt_port');
+                        var topicPrefix = trimmedValue('#mqtt_topic_prefix');
                         var hostInput = document.getElementById('mqtt_host');
+                        var portInput = document.getElementById('mqtt_port');
+                        var topicPrefixInput = document.getElementById('mqtt_topic_prefix');
+                        var validatedInputs = [hostInput, portInput, topicPrefixInput];
 
-                        hostInput.setCustomValidity('');
-                        hostInput.removeAttribute('aria-invalid');
-                        $('#mqtt_validation_error').prop('hidden', true);
+                        validatedInputs.forEach(function(input) {
+                            setMqttFieldInvalid(input, false);
+                        });
+                        showMqttValidationError([]);
                         $('#mqtt_save_error').prop('hidden', true);
 
-                        if (mqttEnabled && !isValidMqttHost(host)) {
-                            hostInput.setCustomValidity('Enter a valid IP address or host name.');
-                            hostInput.setAttribute('aria-invalid', 'true');
-                            $('#mqtt_validation_error')
-                              .text('The configuration cannot be saved because the Broker field contains an invalid host name or IP address.')
-                              .prop('hidden', false);
-                            hostInput.reportValidity();
+                        var invalidInputs = mqttEnabled ? validatedInputs.filter(function(input) {
+                            if (input === hostInput) return !isValidMqttHost(host);
+                            if (input === portInput) return !isValidMqttPort(port);
+                            return !isValidMqttTopicPrefix(topicPrefix);
+                        }) : [];
+
+                        if (invalidInputs.length) {
+                            invalidInputs.forEach(function(input) {
+                                setMqttFieldInvalid(input, true);
+                            });
+                            showMqttValidationError(invalidInputs);
+                            invalidInputs[0].focus();
                             return;
                         }
 
                         var params = {
                             mqtt_update:       1,
                             mqtt_host:         mqttEnabled ? host : '',
-                            mqtt_port:         trimmedValue('#mqtt_port'),
+                            mqtt_port:         port,
                             mqtt_username:     trimmedValue('#mqtt_username'),
-                            mqtt_topic_prefix: trimmedValue('#mqtt_topic_prefix'),
-                            mqtt_tls:          $('#mqtt_tls').is(':checked') ? 1 : 0,
+                            mqtt_topic_prefix: topicPrefix,
+                            mqtt_tls:          tlsEnabled ? 1 : 0,
                             mqtt_ca_cert:      trimmedValue('#mqtt_ca_cert')
                         };
                         // An empty password field means "keep the configured password".
@@ -2057,7 +2122,7 @@
                                     <section id="mqtt_config" class="mqtt-panel" aria-labelledby="mqtt_heading">
                                         <div class="mqtt-heading-row">
                                             <h2 id="mqtt_heading">MQTT</h2>
-                                            <button type="button" onclick="toggleMqttEdit()" id="edit_mqtt_button">Edit Settings</button>
+                                            <button type="button" onclick="toggleMqttEdit()" id="edit_mqtt_button">Edit settings</button>
                                         </div>
 
                                         <div id="mqtt_status_panel" class="mqtt-status mqtt-status--disabled" role="status" aria-live="polite">
@@ -2071,54 +2136,55 @@
 
                                         <div class="mqtt_settings" style="display:none">
                                             <div class="mqtt-form-row">
-                                                <div class="mqtt-form-label">MQTT:</div>
+                                                <div class="mqtt-form-label">Connection:</div>
                                                 <div class="mqtt-checkbox-control">
                                                     <input type="checkbox" class="form-check-input" id="mqtt_enabled" value="1">
                                                     <label class="form-check-label" for="mqtt_enabled">Enable MQTT</label>
                                                 </div>
                                             </div>
                                             <div class="mqtt-form-row">
-                                                <label for="mqtt_host">Broker:</label>
-                                                <input id="mqtt_host" autocomplete="url" title="IP address or hostname of your MQTT broker">
-                                                <small>IP address or hostname of your MQTT broker.</small>
+                                                <label for="mqtt_host">Broker address:</label>
+                                                <input id="mqtt_host" autocomplete="url" title="Hostname or IP address of your MQTT broker">
+                                                <small>Hostname or IP address of your MQTT broker.</small>
                                             </div>
                                             <div class="mqtt-form-row">
                                                 <label for="mqtt_port">Port:</label>
-                                                <input type="number" id="mqtt_port" min="1" max="65535" inputmode="numeric" placeholder="1883" title="Usually 1883 for MQTT, and 8883 for secure MQTTS">
-                                                <small>Default is 1883, or 8883 for TLS.</small>
+                                                <input type="number" id="mqtt_port" min="1" max="65535" inputmode="numeric" placeholder="1883" title="Enter a port from 1 to 65535, or leave blank to use the default">
+                                                <small>Enter a port from 1 to 65535, or leave blank to use 1883 (8883 with TLS).</small>
                                             </div>
                                             <div class="mqtt-form-row">
                                                 <label for="mqtt_topic_prefix">Topic prefix:</label>
                                                 <input id="mqtt_topic_prefix">
-                                                <small>Base topic for all MQTT messages.</small>
+                                                <small>Use topic levels separated by single slashes. Do not start or end with a slash, or use + or #.</small>
                                             </div>
                                             <div class="mqtt-form-row">
                                                 <label for="mqtt_username">Username:</label>
                                                 <input id="mqtt_username" autocomplete="username">
-                                                <small>Leave empty if authentication is not required.</small>
+                                                <small>Username for broker authentication. Leave blank if not required.</small>
                                             </div>
                                             <div class="mqtt-form-row">
                                                 <label for="mqtt_password">Password:</label>
                                                 <input type="password" id="mqtt_password" autocomplete="new-password">
-                                                <small>Leave empty to keep the configured password.</small>
+                                                <small>Password for broker authentication. Leave blank to keep the current password.</small>
                                             </div>
                                             <div class="mqtt-form-row">
-                                                <div class="mqtt-form-label">Encryption:</div>
+                                                <div class="mqtt-form-label">Secure connection:</div>
                                                 <div class="mqtt-checkbox-control">
                                                     <input type="checkbox" class="form-check-input" id="mqtt_tls" value="1">
-                                                    <label class="form-check-label" for="mqtt_tls">TLS</label>
+                                                    <label class="form-check-label" for="mqtt_tls">Use TLS</label>
                                                 </div>
+                                                <small>Encrypt communication with the MQTT broker.</small>
                                             </div>
                                             <div id="mqtt_ca_cert_wrapper" class="mqtt-cert-row" style="display:none;">
-                                                <label for="mqtt_ca_cert">CA Certificate (PEM):</label>
-                                                <textarea id="mqtt_ca_cert" rows="10" title="Paste the PEM-formatted CA certificate here for TLS. If left empty, Let's Encrypt will be used by default."></textarea>
-                                                <small>Leave empty to use the default Let's Encrypt certificate.</small>
+                                                <label for="mqtt_ca_cert">CA certificate:</label>
+                                                <textarea id="mqtt_ca_cert" rows="10" title="Optional. Paste a PEM-encoded CA certificate, or leave blank to use the built-in Let's Encrypt certificate."></textarea>
+                                                <small>Optional. Paste a PEM-encoded CA certificate, or leave blank to use the built-in Let's Encrypt certificate.</small>
                                             </div>
                                             <div class="mqtt-actions">
-                                                <button type="button" onclick="configureMqtt()">Save</button>
+                                                <button type="button" onclick="configureMqtt()">Save settings</button>
                                                 <span id="mqtt_save_spinner" class="mqtt-save-spinner" role="status" aria-label="Saving" hidden></span>
-                                                <span id="mqtt_validation_error" class="text-danger" role="alert" hidden>The configuration cannot be saved because the Broker field contains an invalid host name or IP address.</span>
-                                                <span id="mqtt_save_error" class="text-danger" role="alert" hidden>Saving was not successful.</span>
+                                                <span id="mqtt_validation_error" class="text-danger" role="alert" hidden>The configuration cannot be saved. Check the invalid fields.</span>
+                                                <span id="mqtt_save_error" class="text-danger" role="alert" hidden>The MQTT configuration could not be saved. Please try again.</span>
                                             </div>
                                         </div>
 
