@@ -282,12 +282,13 @@ button.ui-btn, a.ui-btn {
 .mqtt-heading-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 1rem;
     margin-bottom: .75rem;
 }
 
 .mqtt-heading-row h2 {
+    flex: 0 0 120px;
     margin: 0;
     color: var(--gray-dark);
     font-size: 1.5rem;
