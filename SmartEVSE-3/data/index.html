@@ -579,7 +579,7 @@
                   .data('password-set', !!data.mqtt.password_set);
                 $('#mqtt_topic_prefix').val(data.mqtt.topic_prefix);
                 $('#mqtt_tls').prop('checked', data.mqtt.tls).checkboxradio("refresh");  // Set and refresh widget
-                $('#mqtt_enabled').prop('checked', data.mqtt.status !== 'Disabled').checkboxradio("refresh");
+                $('#mqtt_enabled').prop('checked', data.mqtt.enabled).checkboxradio("refresh");
                 $('#mqtt_ca_cert').val(data.mqtt.ca_cert || '');
                 setMqttFieldsEnabled();
             }
@@ -1835,7 +1835,8 @@
 
                         var params = {
                             mqtt_update:       1,
-                            mqtt_host:         mqttEnabled ? host : '',
+                            mqtt_enabled:      mqttEnabled ? 1 : 0,
+                            mqtt_host:         host,
                             mqtt_port:         port,
                             mqtt_username:     trimmedValue('#mqtt_username'),
                             mqtt_topic_prefix: topicPrefix,

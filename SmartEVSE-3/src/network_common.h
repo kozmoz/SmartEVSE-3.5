@@ -57,6 +57,7 @@ extern String MQTTprefix;
 extern String MQTTHost;
 extern uint16_t MQTTPort;
 extern uint8_t lastMqttUpdate;
+extern bool MQTTenabled;
 extern bool MQTTtls;
 extern bool MQTTSmartServer;
 extern bool MQTTSmartServerChanged;        // Flag to trigger reconnect from network_loop()
@@ -91,7 +92,13 @@ public:
         default_opts.qos = 0;
         default_opts.retain = false;
     }
-    void disconnect(void) { mg_mqtt_disconnect(s_conn, &default_opts); };
+    void disconnect(void) {
+        if (s_conn) {
+            mg_mqtt_disconnect(s_conn, &default_opts);
+            s_conn->is_draining = 1;
+            connected = false;
+        }
+    };
     struct mg_connection *s_conn;
 #else
 public:

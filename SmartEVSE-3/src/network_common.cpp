@@ -56,6 +56,7 @@ String MQTTHost = "";
 uint16_t MQTTPort;
 mg_timer *MQTTtimer;
 uint8_t lastMqttUpdate = 0;
+bool MQTTenabled = false;
 bool MQTTtls = false;
 bool MQTTSmartServer = false;               // Use mqtt.smartevse.nl server, can be set from the LCD menu
 bool MQTTSmartServerChanged = false;        // Flag to trigger reconnect from network_loop()
@@ -156,7 +157,7 @@ static uint32_t mqttTimestamp() {
 }
 
 static void mqttResetStatus() {
-    const bool enabled = MQTTHost != "";
+    const bool enabled = MQTTenabled && MQTTHost != "";
     portENTER_CRITICAL(&mqttStatusMux);
     mqttRuntime = MqttRuntimeState{};
     mqttRuntime.status = enabled ? MqttStatus::Connecting : MqttStatus::Disabled;
@@ -311,7 +312,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 
 void MQTTclient_t::connect(void) {
-    if (MQTTHost == "") {
+    if (!MQTTenabled || MQTTHost == "") {
         mqttResetStatus();
         return;
     }
@@ -1629,6 +1630,8 @@ static void fn_mqtt(struct mg_connection *c, int ev, void *ev_data) {
 
 // Timer function - recreate client connection if it is closed
 static void timer_fn(void *arg) {
+    if (!MQTTenabled || MQTTHost == "") return;
+
     struct mg_mgr *mgr = (struct mg_mgr *) arg;
     struct mg_mqtt_opts opts;
     memset(&opts, 0, sizeof(opts));
@@ -2283,7 +2286,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
             }
 #endif
         } else if (mg_http_match_uri(hm, "/settings") && !memcmp("POST", hm->method.buf, hm->method.len)) {
-            DynamicJsonDocument doc(64);
+            DynamicJsonDocument doc(512);
 #if MQTT
             if (request->hasParam("mqtt_update") && request->getParam("mqtt_update")->value().toInt() == 1) {
 
@@ -2291,6 +2294,10 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     MQTTHost = request->getParam("mqtt_host")->value();
                     doc["mqtt_host"] = MQTTHost;
                 }
+
+                MQTTenabled = request->hasParam("mqtt_enabled") &&
+                    request->getParam("mqtt_enabled")->value() == "1";
+                doc["mqtt_enabled"] = MQTTenabled;
 
                 if (request->hasParam("mqtt_tls")) {
                     MQTTtls = request->getParam("mqtt_tls")->value() == "1";
@@ -2347,6 +2354,7 @@ static void fn_http_server(struct mg_connection *c, int ev, void *ev_data) {
                     preferences.putString("MQTTprefix", MQTTprefix);
                     preferences.putString("MQTTHost", MQTTHost);
                     preferences.putUShort("MQTTPort", MQTTPort);
+                    preferences.putBool("MQTTenabled", MQTTenabled);
                     preferences.putBool("MQTTtls", MQTTtls);
                     preferences.end();
                 }
@@ -2437,7 +2445,7 @@ static void startNetworkServices(void) {
         MQTTtimer = mg_timer_add(&mgr, 3000, MG_TIMER_REPEAT | MG_TIMER_RUN_NOW, timer_fn, &mgr);
     }
 #else
-    if (MQTTHost != "" && MQTTclient.client)
+    if (MQTTenabled && MQTTHost != "" && MQTTclient.client)
         mqttStartClient(MQTTclient.client);
 #ifdef SMARTEVSE_VERSION
     if (MQTTSmartServer && MQTTclientSmartEVSE.client)
@@ -2710,6 +2718,14 @@ void WiFiSetup(void) {
         MQTTprefix = preferences.getString("MQTTprefix", "SmartEVSE/" + String(serialnr));
 #endif
         MQTTHost = preferences.getString("MQTTHost", "");
+        // Firmware versions before MQTTenabled used the presence of MQTTHost
+        // as the enable state. Preserve and persist that state during migration.
+        if (preferences.isKey("MQTTenabled")) {
+            MQTTenabled = preferences.getBool("MQTTenabled");
+        } else {
+            MQTTenabled = MQTTHost != "";
+            preferences.putBool("MQTTenabled", MQTTenabled);
+        }
         MQTTPort = preferences.getUShort("MQTTPort", 1883);
         MQTTtls = preferences.getBool("MQTTtls", false);
         mqttResetStatus();

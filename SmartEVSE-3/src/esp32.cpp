@@ -1653,6 +1653,7 @@ bool handle_URI(struct mg_connection *c, struct mg_http_message *hm,  webServerR
 #endif
 
 #if MQTT
+        doc["mqtt"]["enabled"] = MQTTenabled;
         doc["mqtt"]["host"] = MQTTHost;
         doc["mqtt"]["port"] = MQTTPort;
         doc["mqtt"]["topic_prefix"] = MQTTprefix;
