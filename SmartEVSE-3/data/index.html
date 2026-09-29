@@ -154,7 +154,12 @@
 
       function updateMqttStatus(mqtt) {
         const status = mqtt.status || 'Error';
-        const state = status.toLowerCase();
+        const statusStyles = {
+          Disabled: { panel: 'bg-gray-100 border text-gray-800', icon: 'bg-gray-600 text-white', symbol: '−' },
+          Connecting: { panel: 'alert-warning', icon: 'spinner-border spinner-border-sm text-warning', symbol: '' },
+          Connected: { panel: 'alert-success', icon: 'bg-success text-white', symbol: '✓' },
+          Error: { panel: 'alert-danger', icon: 'bg-danger text-white', symbol: '!' }
+        };
         const errorLabels = {
           NetworkUnavailable: 'Network unavailable',
           DnsFailed: 'Broker name could not be resolved',
@@ -190,7 +195,11 @@
         }
 
         const panel = document.getElementById('mqtt_status_panel');
-        panel.className = 'mqtt-status mqtt-status--' + state;
+        const style = statusStyles[status] || statusStyles.Error;
+        panel.className = 'alert d-flex align-items-start p-3 ' + style.panel;
+        const icon = document.getElementById('mqtt_status_icon');
+        icon.className = 'mqtt-status-icon rounded-circle d-inline-flex align-items-center justify-content-center mr-3 mt-1 ' + style.icon;
+        icon.textContent = style.symbol;
         document.getElementById('mqtt_status_title').textContent = titleLabels[status] || titleLabels.Error;
         document.getElementById('mqtt_status_detail').textContent = details;
         document.getElementById('mqtt_status_meta').textContent = meta;
@@ -2145,12 +2154,12 @@
                                             <button type="button" onclick="toggleMqttEdit()" id="edit_mqtt_button">Edit settings</button>
                                         </div>
 
-                                        <div id="mqtt_status_panel" class="mqtt-status mqtt-status--disabled" role="status" aria-live="polite">
-                                            <span class="mqtt-status-icon" aria-hidden="true"></span>
-                                            <div class="mqtt-status-copy">
+                                        <div id="mqtt_status_panel" class="alert bg-gray-100 border text-gray-800 d-flex align-items-start p-3" role="status" aria-live="polite">
+                                            <span id="mqtt_status_icon" class="mqtt-status-icon rounded-circle d-inline-flex align-items-center justify-content-center mr-3 mt-1 bg-gray-600 text-white" aria-hidden="true">−</span>
+                                            <div class="d-flex flex-column text-break">
                                                 <strong id="mqtt_status_title">Disabled</strong>
                                                 <span id="mqtt_status_detail">MQTT is turned off</span>
-                                                <small id="mqtt_status_meta"></small>
+                                                <small id="mqtt_status_meta" class="text-muted mt-1"></small>
                                             </div>
                                         </div>
 
