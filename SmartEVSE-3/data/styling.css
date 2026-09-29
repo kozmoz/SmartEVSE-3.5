@@ -362,10 +362,6 @@ button.ui-btn, a.ui-btn {
     margin: 0;
 }
 
-.mqtt-checkbox-control .ui-checkbox.ui-state-disabled {
-    opacity: .65;
-}
-
 .mqtt-cert-row {
     align-items: start;
 }
