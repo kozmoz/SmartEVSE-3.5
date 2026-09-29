@@ -28,6 +28,8 @@
       let initiated=false;
       let loadDataTimer;
       let mqttEditMode = false;
+      let mqttSaveSuccessTimer;
+      const MQTT_SAVE_SUCCESS_DURATION_MS = 5000;
       let ocppEditMode = false;
       let last_evse_state_id=0;
       let latestRawSettingsJson = "";
@@ -125,6 +127,21 @@
         error
           .text('The configuration cannot be saved. Check the following ' + fieldText + ': ' + labelText + '.')
           .prop('hidden', false);
+      }
+
+      function hideMqttSaveSuccess() {
+        window.clearTimeout(mqttSaveSuccessTimer);
+        mqttSaveSuccessTimer = undefined;
+        $('#mqtt_save_success').prop('hidden', true);
+      }
+
+      function showMqttSaveSuccess() {
+        hideMqttSaveSuccess();
+        $('#mqtt_save_success').prop('hidden', false);
+        mqttSaveSuccessTimer = window.setTimeout(
+          hideMqttSaveSuccess,
+          MQTT_SAVE_SUCCESS_DURATION_MS
+        );
       }
 
       function formatMqttTimestamp(timestamp) {
@@ -1817,6 +1834,7 @@
                         });
                         showMqttValidationError([]);
                         $('#mqtt_save_error').prop('hidden', true);
+                        hideMqttSaveSuccess();
 
                         var invalidInputs = mqttEnabled ? validatedInputs.filter(function(input) {
                             if (input === hostInput) return !isValidMqttHost(host);
@@ -1854,18 +1872,19 @@
                             .map(k => k + "=" + encodeURIComponent(params[k]))
                             .join("&");
 
+                        $('#mqtt_save_button').prop('disabled', true);
                         $('#mqtt_save_spinner').prop('hidden', false);
                         $.post("/settings?" + query)
                           .done(function() {
+                            showMqttSaveSuccess();
                             loadData();
                           })
                           .fail(function() {
                             $('#mqtt_save_error').prop('hidden', false);
                           })
                           .always(function() {
-                            setTimeout(function() {
-                                $('#mqtt_save_spinner').prop('hidden', true);
-                            }, 1000);
+                            $('#mqtt_save_spinner').prop('hidden', true);
+                            $('#mqtt_save_button').prop('disabled', false);
                           });
 
                     }
@@ -2137,8 +2156,7 @@
 
                                         <div class="mqtt_settings" style="display:none">
                                             <div class="mqtt-form-row">
-                                                <div class="mqtt-form-label">Connection:</div>
-                                                <div class="mqtt-checkbox-control">
+                                                <div class="mqtt-checkbox-control mqtt-enable-control">
                                                     <input type="checkbox" class="form-check-input" id="mqtt_enabled" value="1">
                                                     <label class="form-check-label" for="mqtt_enabled">Enable MQTT</label>
                                                 </div>
@@ -2181,9 +2199,10 @@
                                                 <textarea id="mqtt_ca_cert" rows="10" title="Optional. Paste a PEM-encoded CA certificate, or leave blank to use the built-in Let's Encrypt certificate."></textarea>
                                                 <small>Optional. Paste a PEM-encoded CA certificate, or leave blank to use the built-in Let's Encrypt certificate.</small>
                                             </div>
-                                            <div class="mqtt-actions">
-                                                <button type="button" onclick="configureMqtt()">Save settings</button>
+                                            <div class="mqtt-actions d-flex align-items-center flex-wrap">
+                                                <button type="button" class="mr-2" id="mqtt_save_button" onclick="configureMqtt()">Save settings</button>
                                                 <span id="mqtt_save_spinner" class="mqtt-save-spinner" role="status" aria-label="Saving" hidden></span>
+                                                <span id="mqtt_save_success" class="alert alert-success py-1 px-2 mb-0 font-weight-bold" role="status" aria-live="polite" aria-atomic="true" hidden><span class="mr-1" aria-hidden="true">&#10003;</span> MQTT settings saved successfully.</span>
                                                 <span id="mqtt_validation_error" class="text-danger" role="alert" hidden>The configuration cannot be saved. Check the invalid fields.</span>
                                                 <span id="mqtt_save_error" class="text-danger" role="alert" hidden>The MQTT configuration could not be saved. Please try again.</span>
                                             </div>

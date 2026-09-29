@@ -439,6 +439,10 @@ button.ui-btn, a.ui-btn {
     max-width: 100%;
 }
 
+.mqtt-enable-control {
+    grid-column: 2;
+}
+
 .mqtt-checkbox-control .ui-checkbox {
     width: auto;
     margin: 0;
@@ -459,9 +463,6 @@ button.ui-btn, a.ui-btn {
 }
 
 .mqtt-actions {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
     margin-left: 11rem;
 }
 
@@ -490,6 +491,10 @@ button.ui-btn, a.ui-btn {
     .mqtt-form-row > small,
     .mqtt-cert-row > small {
         margin-top: -.15rem;
+    }
+
+    .mqtt-enable-control {
+        grid-column: 1;
     }
 
     .mqtt-actions {
