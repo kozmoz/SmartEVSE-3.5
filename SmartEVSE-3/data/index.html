@@ -42,7 +42,9 @@
 
       // Function to toggle cert visibility
       function toggleCertVisibility() {
-          if ($('#mqtt_tls').is(':checked') && $('#mqtt_enabled').is(':checked')) {
+          const tlsEnabled = $('#mqtt_tls').is(':checked');
+          $('#mqtt_port').attr('placeholder', tlsEnabled ? '8883' : '1883');
+          if (tlsEnabled && $('#mqtt_enabled').is(':checked')) {
               $('#mqtt_ca_cert_wrapper').show();
           } else {
               $('#mqtt_ca_cert_wrapper').hide();
@@ -1724,18 +1726,21 @@
                         }
                     }
                     function configureMqtt() {
+                        var trimmedValue = function(selector) {
+                            return String($(selector).val() || '').trim();
+                        };
                         var params = {
                             mqtt_update:       1,
-                            mqtt_host:         $('#mqtt_enabled').is(':checked') ? $('#mqtt_host').val() : '',
-                            mqtt_port:         $('#mqtt_port').val(),
-                            mqtt_username:     $('#mqtt_username').val(),
-                            mqtt_topic_prefix: $('#mqtt_topic_prefix').val(),
+                            mqtt_host:         $('#mqtt_enabled').is(':checked') ? trimmedValue('#mqtt_host') : '',
+                            mqtt_port:         trimmedValue('#mqtt_port'),
+                            mqtt_username:     trimmedValue('#mqtt_username'),
+                            mqtt_topic_prefix: trimmedValue('#mqtt_topic_prefix'),
                             mqtt_tls:          $('#mqtt_tls').is(':checked') ? 1 : 0,
-                            mqtt_ca_cert:      $('#mqtt_ca_cert').val()
+                            mqtt_ca_cert:      trimmedValue('#mqtt_ca_cert')
                         };
                         // An empty password field means "keep the configured password".
                         // Only send it when the user entered a replacement, or no password exists yet.
-                        var password = $('#mqtt_password').val();
+                        var password = trimmedValue('#mqtt_password');
                         if (password || !$('#mqtt_password').data('password-set')) {
                             params.mqtt_password = password;
                         }
@@ -1744,12 +1749,20 @@
                             .map(k => k + "=" + encodeURIComponent(params[k]))
                             .join("&");
 
+                        $('#mqtt_save_error').prop('hidden', true);
                         $('#mqtt_save_spinner').prop('hidden', false);
-                        $.post("/settings?" + query).always(function() {
+                        $.post("/settings?" + query)
+                          .done(function() {
+                            loadData();
+                          })
+                          .fail(function() {
+                            $('#mqtt_save_error').prop('hidden', false);
+                          })
+                          .always(function() {
                             setTimeout(function() {
                                 $('#mqtt_save_spinner').prop('hidden', true);
                             }, 1000);
-                        });
+                          });
 
                     }
                     function toggleLCDlock() {
@@ -2033,7 +2046,7 @@
                                             </div>
                                             <div class="mqtt-form-row">
                                                 <label for="mqtt_port">Port:</label>
-                                                <input type="number" id="mqtt_port" min="1" max="65535" inputmode="numeric" title="Usually 1883 for MQTT, and 8883 for secure MQTTS">
+                                                <input type="number" id="mqtt_port" min="1" max="65535" inputmode="numeric" placeholder="1883" title="Usually 1883 for MQTT, and 8883 for secure MQTTS">
                                                 <small>Default is 1883, or 8883 for TLS.</small>
                                             </div>
                                             <div class="mqtt-form-row">
@@ -2066,6 +2079,7 @@
                                             <div class="mqtt-actions">
                                                 <button type="button" onclick="configureMqtt()">Save</button>
                                                 <span id="mqtt_save_spinner" class="mqtt-save-spinner" role="status" aria-label="Saving" hidden></span>
+                                                <span id="mqtt_save_error" class="text-danger" role="alert" hidden>Saving was not successful.</span>
                                             </div>
                                         </div>
 
