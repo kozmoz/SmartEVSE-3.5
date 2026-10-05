@@ -273,3 +273,146 @@ button.ui-btn, a.ui-btn {
     opacity: .5;
     cursor: not-allowed;
 }
+
+/* MQTT configuration and connection status. */
+.mqtt-panel {
+    color: var(--gray-dark);
+}
+
+.mqtt-heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1rem;
+    margin-bottom: .75rem;
+}
+
+.mqtt-heading-row h2 {
+    flex: 0 0 120px;
+    margin: 0;
+    color: var(--gray-dark);
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.mqtt-status-icon {
+    flex: 0 0 1.5rem;
+    height: 1.5rem;
+    text-shadow: none;
+}
+
+.mqtt_settings {
+    margin-bottom: .75rem;
+    padding: 1rem;
+    border: 1px solid #e3e6f0;
+    border-radius: .35rem;
+}
+
+.mqtt-form-row,
+.mqtt-cert-row {
+    display: grid;
+    grid-template-columns: minmax(8rem, 10rem) minmax(12rem, 22rem) minmax(12rem, 1fr);
+    align-items: center;
+    gap: .35rem 1rem;
+    margin-bottom: .65rem;
+}
+
+.mqtt-form-row > label,
+.mqtt-form-row > .mqtt-form-label,
+.mqtt-cert-row > label {
+    margin: 0;
+    color: var(--gray-dark);
+    font-weight: 700;
+}
+
+.mqtt-form-row > .ui-input-text,
+.mqtt-form-row > input,
+.mqtt-cert-row > textarea {
+    width: 100%;
+    margin: 0;
+}
+
+.mqtt-form-row > .ui-input-text.mqtt-field-invalid,
+.mqtt-form-row > input.mqtt-field-invalid {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 .1rem rgba(231, 74, 59, .25);
+}
+
+.mqtt-form-row > small,
+.mqtt-cert-row > small {
+    color: var(--gray);
+}
+
+.mqtt-checkbox-control {
+    justify-self: start;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.mqtt-enable-control {
+    grid-column: 2;
+}
+
+.mqtt-checkbox-control .ui-checkbox {
+    width: auto;
+    margin: 0;
+}
+
+.mqtt-checkbox-control .ui-checkbox label {
+    margin: 0;
+}
+
+.mqtt-cert-row {
+    align-items: start;
+}
+
+.mqtt-cert-row .ui-input-text,
+.mqtt-cert-row textarea {
+    min-height: 11rem;
+    font-family: var(--font-family-monospace), monospace;
+}
+
+.mqtt-actions {
+    margin-left: 11rem;
+}
+
+@keyframes mqtt-spin {
+    to { transform: rotate(360deg); }
+}
+
+.mqtt-save-spinner {
+    display: inline-block;
+    width: 1.25rem;
+    height: 1.25rem;
+    border: .2rem solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: mqtt-spin .75s linear infinite;
+}
+
+@media (max-width: 767px) {
+    .mqtt-form-row,
+    .mqtt-cert-row {
+        grid-template-columns: 1fr;
+    }
+
+    .mqtt-form-row > small,
+    .mqtt-cert-row > small {
+        margin-top: -.15rem;
+    }
+
+    .mqtt-enable-control {
+        grid-column: 1;
+    }
+
+    .mqtt-actions {
+        margin-left: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #mqtt_status_icon.spinner-border,
+    .mqtt-save-spinner {
+        animation: none;
+    }
+}
