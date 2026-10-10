@@ -66,13 +66,13 @@ try:
             shutil.copy('data/' + filename, 'pack.tmp/data/' + filename)
             filelist.append('data/' + filename)
             continue
-        elif filename == "index.html" or filename == "styling.css":
-            # Minify these assets before gzipping/packing to reduce footprint.
+        elif filename.endswith(".html") or filename.endswith(".css") or filename.endswith(".js"):
+            # Minify HTML/CSS/JS assets before gzipping/packing to reduce footprint.
             with open('data/' + filename, 'r', encoding='utf-8') as f_in:
                 content = f_in.read()
-            if filename == "index.html":
+            if filename.endswith(".html"):
                 content = minify_html(content)
-            else:
+            elif filename.endswith(".css"):
                 content = minify_css(content)
             with gzip.open('pack.tmp/data/' + filename + '.gz', 'wb') as f_out:
                 f_out.write(content.encode('utf-8'))

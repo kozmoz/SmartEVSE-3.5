@@ -1592,8 +1592,8 @@ static constexpr uint8_t BMP_HEADER[62] = {
     0, 0, 0, 0,                                        // Important colors
 
     // Color palette
-    0xFF, 0xFF, 0xFF, 0x00,                            // White (0)
-    0x00, 0x00, 0xFF, 0x00,                            // Red   (1)
+    0xC8, 0xCC, 0xC6, 0x00,                            // LCD background (0) - light STN grey-green
+    0x3C, 0x42, 0x3C, 0x00,                            // LCD pixels    (1) - dark grey, like a real STN segment display
 };
 
 /**
