@@ -30,6 +30,22 @@
 .lcdctl .btn.held{background:var(--acc);border-color:var(--acc);color:#fff}
 .lockline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--fg2)}
 .lockline input{width:90px}
+.mqtt-state{display:flex;gap:11px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg3)}
+.mqtt-state[data-status="Connected"]{border-color:var(--ok)}
+.mqtt-state[data-status="Error"]{border-color:var(--err)}
+.mqtt-state[data-status="Connecting"]{border-color:var(--acc)}
+.mqtt-state-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:23px;height:23px;border-radius:50%;background:var(--fg2);color:var(--bg2);font-weight:700}
+.mqtt-state[data-status="Connected"] .mqtt-state-icon{background:var(--ok);color:#fff}
+.mqtt-state[data-status="Error"] .mqtt-state-icon{background:var(--err);color:#fff}
+.mqtt-state[data-status="Connecting"] .mqtt-state-icon{background:var(--acc);color:#fff}
+.mqtt-state-copy{min-width:0;overflow-wrap:anywhere}
+.mqtt-state-copy strong{display:block}
+.mqtt-state-meta{display:block;color:var(--fg2);font-size:12px;margin-top:3px}
+.mqtt-help{color:var(--fg2);font-size:12px;margin:4px 0 0}
+.mqtt-field-invalid{border-color:var(--err)!important;outline:1px solid var(--err)}
+.mqtt-feedback{font-size:13px;margin:8px 0 0}
+.mqtt-feedback.error{color:var(--err)}
+.mqtt-feedback.success{color:var(--ok)}
 </style>
   </head>
   <body>
@@ -207,31 +223,47 @@
         <div class="ln"></div>
       </div>
       <div class="card hidden" id="mqtt-card" style="margin-top:10px">
-        <div class="row" style="margin-bottom:8px">
-          <span>Status</span>
-          <b id="mqtt-status">&mdash;</b>
+        <div class="mqtt-state" id="mqtt-state" role="status" aria-live="polite" data-status="Disabled">
+          <span class="mqtt-state-icon" id="mqtt-state-icon" aria-hidden="true">&minus;</span>
+          <div class="mqtt-state-copy">
+            <strong id="mqtt-state-title">Disabled</strong>
+            <span id="mqtt-state-detail">MQTT is turned off</span>
+            <span class="mqtt-state-meta" id="mqtt-state-meta"></span>
+            <span class="mqtt-state-meta hidden" id="mqtt-discovery-note">Home Assistant discovery is published automatically when MQTT is enabled.</span>
+          </div>
         </div>
         <details id="mqtt-details">
-          <summary style="cursor:pointer;font-size:13px;color:var(--fg2);margin-bottom:8px">Edit settings</summary>
-          <div class="fields" style="align-items:flex-end">
-            <label class="f">Host<input type="text" id="mqtt-host" placeholder="empty = disabled" title="Leave empty to disable MQTT"></label>
-            <label class="f">Port<input type="number" id="mqtt-port" style="width:90px" title="Usually 1883 for MQTT, and 8883 for secure MQTTS"></label>
-            <label class="f">Topic prefix<input type="text" id="mqtt-prefix"></label>
+          <summary style="cursor:pointer;font-size:13px;color:var(--fg2);margin:10px 0 8px">Edit settings</summary>
+          <div class="fields">
+            <label class="switch" title="Connect to the configured MQTT broker">
+              <input type="checkbox" id="mqtt-enabled">
+              <span class="track"><span class="knob"></span></span>
+              Enable MQTT
+            </label>
           </div>
+          <div class="fields" style="align-items:flex-end">
+            <label class="f">Broker address<input type="text" id="mqtt-host" autocomplete="url" title="Hostname or IP address of your MQTT broker"></label>
+            <label class="f">Port<input type="number" id="mqtt-port" min="1" max="65535" inputmode="numeric" style="width:90px" title="Leave empty for 1883, or 8883 with TLS"></label>
+            <label class="f">Topic prefix<input type="text" id="mqtt-prefix" title="Leave empty for the default topic prefix"></label>
+          </div>
+          <p class="mqtt-help">Leave port empty for 1883 (8883 with TLS). Leave topic prefix empty for the default; custom prefixes cannot contain +, #, or empty levels.</p>
           <div class="fields" style="margin-top:8px;align-items:flex-end">
-            <label class="f">Username<input type="text" id="mqtt-user" autocomplete="off" title="Leave empty for anonymous MQTT"></label>
-            <label class="f">Password<input type="password" id="mqtt-pass" autocomplete="new-password" placeholder="unchanged" title="Leave empty for anonymous MQTT"></label>
+            <label class="f">Username<input type="text" id="mqtt-user" autocomplete="username" title="Leave empty for anonymous MQTT"></label>
+            <label class="f">Password<input type="password" id="mqtt-pass" autocomplete="new-password" placeholder="Not configured" title="Leave empty to keep the current password"></label>
             <label class="switch infield" title="Use a secure (TLS) connection to the MQTT broker, usually port 8883">
               <input type="checkbox" id="mqtt-tls">
               <span class="track"><span class="knob"></span></span>
             TLS</label>
           </div>
           <div class="hidden" id="mqtt-cert-wrap" style="margin-top:8px">
-            <label class="f">CA certificate (PEM, empty = default)
-<textarea id="mqtt-cert" rows="6" spellcheck="false" title="Paste the PEM-formatted CA certificate here for TLS. if left empty, LetsEncrypt will be used as default"></textarea>
+            <label class="f">CA certificate (PEM, empty = built-in certificate)
+<textarea id="mqtt-cert" rows="6" spellcheck="false" title="Paste a PEM-formatted CA certificate for TLS, or leave empty for the built-in certificate"></textarea>
             </label>
           </div>
           <div class="actions" style="margin-top:10px"><button class="btn pri" id="mqtt-save">Save MQTT</button></div>
+          <p class="mqtt-feedback error hidden" id="mqtt-validation" role="alert"></p>
+          <p class="mqtt-feedback error hidden" id="mqtt-save-error" role="alert">MQTT settings could not be saved. Please try again.</p>
+          <p class="mqtt-feedback success hidden" id="mqtt-save-success" role="status">MQTT settings saved successfully.</p>
         </details>
       </div>
       <div class="section">
@@ -393,6 +425,56 @@ let inited = false;
 let fails = 0;
 let pollTimer = 0;
 let ocppFillPending = 0;  // deadline (ms) for the one-shot field fill right after enabling OCPP
+let mqttCertLoaded = false;
+let mqttSuccessTimer = 0;
+
+/** Format an MQTT epoch timestamp in the browser's local time. @param {number} seconds Unix seconds. @returns {string} Local date and time, or an empty string. */
+function mqttTime(seconds) {
+  if (!seconds) return "";
+  const date = new Date(seconds * 1000);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+}
+
+/** Show the MQTT connection state and its most useful context. @param {object} mqtt MQTT settings and runtime state. @returns {void} */
+function renderMqttStatus(mqtt) {
+  const errors = {
+    NetworkUnavailable: "Network unavailable",
+    DnsFailed: "Broker name could not be resolved",
+    ConnectionRefused: "Connection refused",
+    AuthenticationFailed: "Authentication failed",
+    TlsFailed: "TLS connection failed",
+    Timeout: "Connection timed out",
+    ConnectionLost: "Connection lost",
+    Unknown: "Unknown connection error"
+  };
+  const status = ["Disabled", "Connecting", "Connected", "Error"].includes(mqtt.status) ? mqtt.status : "Error";
+  const broker = mqtt.host ? mqtt.host + ":" + mqtt.port : "";
+  const attempt = mqttTime(mqtt.last_connect_attempt);
+  const since = mqttTime(mqtt.connected_since);
+  $("mqtt-state").dataset.status = status;
+  $("mqtt-state-icon").textContent = { Disabled: "−", Connecting: "…", Connected: "✓", Error: "!" }[status];
+  $("mqtt-state-title").textContent = { Disabled: "Disabled", Connecting: "Connecting…", Connected: "Connected", Error: "Connection failed" }[status];
+  $("mqtt-state-detail").textContent = status === "Connected" ? "Connected to " + broker
+    : status === "Connecting" ? (broker ? "Trying " + broker : "Waiting for broker settings")
+    : status === "Error" ? (errors[mqtt.last_error] || errors.Unknown) : "MQTT is turned off";
+  $("mqtt-state-meta").textContent = status === "Connected"
+    ? [mqtt.topic_prefix ? "Topic: " + mqtt.topic_prefix : "", since ? "Since " + since : ""].filter(Boolean).join(" · ")
+    : status === "Connecting" ? "Retrying automatically"
+    : status === "Error" ? (attempt ? "Last attempt: " + attempt : "Configuration remains saved") : "";
+  $("mqtt-discovery-note").classList.toggle("hidden", status !== "Connected");
+}
+
+/** Refresh MQTT form fields from device settings while the form is closed. @param {object} mqtt MQTT settings. @returns {void} */
+function fillMqtt(mqtt) {
+  $("mqtt-enabled").checked = !!mqtt.enabled;
+  $("mqtt-host").value = mqtt.host || "";
+  $("mqtt-port").value = mqtt.port || "";
+  $("mqtt-prefix").value = mqtt.topic_prefix || "";
+  $("mqtt-user").value = mqtt.username || "";
+  $("mqtt-pass").placeholder = mqtt.password_set ? "Password configured" : "Not configured";
+  $("mqtt-tls").checked = !!mqtt.tls;
+  $("mqtt-port").placeholder = mqtt.tls ? "8883" : "1883";
+}
 
 function fillOcpp(o) {
   $("ocpp-url").value = o.backend_url || "";
@@ -425,6 +507,7 @@ function buildModeButtons() {
   });
 }
 
+/** Render the latest device settings and runtime data. @returns {void} */
 function render() {
   if (!d) return;
   const ev = d.evse || {}, st = d.settings || {}, ph = d.phase_currents || {}, evm = d.ev_meter || {};
@@ -521,16 +604,8 @@ function render() {
   
   if (d.mqtt) {
     $("mqtt-card").classList.remove("hidden");
-    const up = d.mqtt.status === "Connected";
-    $("mqtt-status").innerHTML = '<span class="' + (up ? "ok" : "err") + '">' + esc(d.mqtt.status) + "</span>";
-    if (!$("mqtt-details").open) {
-      $("mqtt-host").value = d.mqtt.host || "";
-      $("mqtt-port").value = d.mqtt.port || 1883;
-      $("mqtt-prefix").value = d.mqtt.topic_prefix || "";
-      $("mqtt-user").value = d.mqtt.username || "";
-      $("mqtt-pass").placeholder = d.mqtt.password_set ? "unchanged" : "";
-      $("mqtt-tls").checked = !!d.mqtt.tls;
-    }
+    renderMqttStatus(d.mqtt);
+    if (!$("mqtt-details").open) fillMqtt(d.mqtt);
     $("mqtt-cert-wrap").classList.toggle("hidden", !$("mqtt-tls").checked || !$("mqtt-details").open);
   } else $("mqtt-card").classList.add("hidden");
 
@@ -598,25 +673,109 @@ $("btn-reboot").onclick = function () {
 })();
 
 
-$("mqtt-tls").onchange = () => {
-  $("mqtt-cert-wrap").classList.toggle("hidden", !$("mqtt-tls").checked);
-  if ($("mqtt-tls").checked && !$("mqtt-cert").value)
-    fetch("/mqtt_ca_cert", { cache: "no-store" }).then((r) => r.text()).then((t) => { $("mqtt-cert").value = t.trim(); }).catch(() => {});
-};
-$("mqtt-save").onclick = function () {
-  const p = new URLSearchParams({
+/** Load the saved CA certificate when the MQTT editor opens. @returns {Promise<void>} */
+async function loadMqttCert() {
+  if (mqttCertLoaded) return;
+  try {
+    const response = await fetch("/mqtt_ca_cert", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const cert = await response.text();
+    if (!mqttCertLoaded) $("mqtt-cert").value = cert.trim();
+    mqttCertLoaded = true;
+  } catch (error) {
+    toast("Could not load the MQTT CA certificate");
+  }
+}
+
+/** Show TLS controls and the matching default port. @returns {void} */
+function updateMqttTlsUi() {
+  const tls = $("mqtt-tls").checked;
+  $("mqtt-cert-wrap").classList.toggle("hidden", !tls);
+  $("mqtt-port").placeholder = tls ? "8883" : "1883";
+}
+
+/** Validate the MQTT fields required for an enabled connection. @returns {boolean} Whether the form is valid. */
+function validateMqtt() {
+  const host = $("mqtt-host").value.trim();
+  const port = $("mqtt-port").value.trim();
+  const prefix = $("mqtt-prefix").value.trim();
+  const invalid = [];
+  if ($("mqtt-enabled").checked) {
+    let hostValid = !!host && host.length <= 253 && !/\s/.test(host);
+    if (hostValid && /^[0-9.]+$/.test(host)) {
+      const octets = host.split(".");
+      hostValid = octets.length === 4 && octets.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+    } else if (hostValid) hostValid = /^[a-z0-9._-]+$/i.test(host) && /[a-z0-9]/i.test(host);
+    if (!hostValid) invalid.push(["mqtt-host", "Broker address"]);
+    if ($("mqtt-port").validity.badInput || (port && (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)))
+      invalid.push(["mqtt-port", "Port"]);
+    if (prefix.startsWith("/") || prefix.endsWith("/") || prefix.includes("//") || /[#+\u0000-\u001f\u007f]/.test(prefix))
+      invalid.push(["mqtt-prefix", "Topic prefix"]);
+  }
+  ["mqtt-host", "mqtt-port", "mqtt-prefix"].forEach((id) => {
+    const bad = invalid.some(([field]) => field === id);
+    $(id).classList.toggle("mqtt-field-invalid", bad);
+    if (bad) $(id).setAttribute("aria-invalid", "true");
+    else $(id).removeAttribute("aria-invalid");
+  });
+  $("mqtt-validation").textContent = invalid.length ? "Check these fields: " + invalid.map(([, label]) => label).join(", ") + "." : "";
+  $("mqtt-validation").classList.toggle("hidden", !invalid.length);
+  if (invalid.length) $(invalid[0][0]).focus();
+  return !invalid.length;
+}
+
+/** Save MQTT settings and report the device response in the editor. @returns {Promise<void>} */
+async function saveMqtt() {
+  $("mqtt-save-error").classList.add("hidden");
+  $("mqtt-save-success").classList.add("hidden");
+  clearTimeout(mqttSuccessTimer);
+  if (!validateMqtt()) return;
+  const params = new URLSearchParams({
     mqtt_update: "1",
-    mqtt_host: $("mqtt-host").value,
-    mqtt_port: $("mqtt-port").value || "1883",
-    mqtt_topic_prefix: $("mqtt-prefix").value,
-    mqtt_username: $("mqtt-user").value,
+    mqtt_enabled: $("mqtt-enabled").checked ? "1" : "0",
+    mqtt_host: $("mqtt-host").value.trim(),
+    mqtt_port: $("mqtt-port").value.trim(),
+    mqtt_topic_prefix: $("mqtt-prefix").value.trim(),
+    mqtt_username: $("mqtt-user").value.trim(),
     mqtt_tls: $("mqtt-tls").checked ? "1" : "0"
   });
-  const pass = $("mqtt-pass").value;
-  if (pass) p.set("mqtt_password", pass);
-  if ($("mqtt-tls").checked) p.set("mqtt_ca_cert", $("mqtt-cert").value);
-  postSettings(p).then((ok) => { if (ok) { toast("MQTT settings saved"); $("mqtt-details").open = false; $("mqtt-pass").value = ""; poll(); } });
-};
+  if ($("mqtt-pass").value) params.set("mqtt_password", $("mqtt-pass").value);
+  if ($("mqtt-tls").checked && mqttCertLoaded) params.set("mqtt_ca_cert", $("mqtt-cert").value.trim());
+  const button = $("mqtt-save");
+  button.disabled = true;
+  button.textContent = "Saving…";
+  try {
+    const response = await fetch("/settings?" + params.toString(), { method: "POST", cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const result = await response.json();
+    if (Object.values(result).some((value) => typeof value === "string" && /not allowed|failed|Can only/i.test(value)))
+      throw new Error("Settings rejected");
+    if (result.mqtt_topic_prefix !== undefined) $("mqtt-prefix").value = result.mqtt_topic_prefix;
+    if (result.mqtt_port !== undefined) $("mqtt-port").value = result.mqtt_port;
+    if (result.mqtt_password_set !== undefined) $("mqtt-pass").placeholder = result.mqtt_password_set ? "Password configured" : "Not configured";
+    $("mqtt-pass").value = "";
+    $("mqtt-save-success").classList.remove("hidden");
+    mqttSuccessTimer = setTimeout(() => $("mqtt-save-success").classList.add("hidden"), 5000);
+    poll();
+  } catch (error) {
+    $("mqtt-save-error").classList.remove("hidden");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Save MQTT";
+  }
+}
+
+$("mqtt-details").addEventListener("toggle", () => {
+  if ($("mqtt-details").open) { updateMqttTlsUi(); void loadMqttCert(); }
+});
+$("mqtt-tls").addEventListener("change", updateMqttTlsUi);
+$("mqtt-cert").addEventListener("input", () => { mqttCertLoaded = true; });
+["mqtt-host", "mqtt-port", "mqtt-prefix"].forEach((id) => $(id).addEventListener("input", () => {
+  $(id).classList.remove("mqtt-field-invalid");
+  $(id).removeAttribute("aria-invalid");
+  $("mqtt-validation").classList.add("hidden");
+}));
+$("mqtt-save").addEventListener("click", saveMqtt);
 
 
 $("ocpp-enable").onchange = (e) =>
